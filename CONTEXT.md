@@ -65,8 +65,12 @@ Work Type que implementa un Feature Slice y produce código, evidencias de valid
 _Avoid_: Feature Slice, Development
 
 **Wayfinding Map**:
-Composite Mission que organiza decisiones bajo incertidumbre. Concluye cuando no quedan decisiones ni niebla pendientes y produce una Exploration Conclusion que puede originar cero o más Feature Missions.
+Composite Mission que organiza decisiones bajo incertidumbre. Concluye cuando no quedan decisiones ni niebla pendientes y produce una Exploration Conclusion que puede originar cero o más Features.
 _Avoid_: Project plan, implementation plan
+
+**Exploration Conclusion**:
+Artifact final de un Wayfinding Map que consolida las decisiones resueltas y determina qué Features, si las hay, deben originarse.
+_Avoid_: Feature Specification, implementation plan
 
 **Grilling**:
 Work Type interactivo que resuelve una decisión mediante preguntas del agente y respuestas del Operator.
