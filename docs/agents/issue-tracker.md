@@ -17,6 +17,12 @@ Infer the repository from `git remote -v`; `gh` does this automatically inside t
 
 **PRs as a request surface: no.**
 
+## Pull request linking
+
+- Use `Closes #<work issue>` for the issue whose work the pull request delivers.
+- Use `Part of #<parent issue>` for a longer-running parent such as a Wayfinder Map.
+- Close the parent only when its own completion contract is satisfied, never merely because one child pull request merged.
+
 ## Skill operations
 
 - “Publish to the issue tracker”: create a GitHub issue.
