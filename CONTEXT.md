@@ -50,7 +50,7 @@ Recurso externo concreto que una acción puede leer o modificar, como un reposit
 _Avoid_: Environment, destination
 
 **Autonomy Grant**:
-Autorización revocable y auditable del Operator para que un Workflow versionado ejecute una acción concreta sobre un Target bajo un Execution Profile. Puede limitarse a una ejecución, una Mission o esa versión del Workflow.
+Autorización revocable y auditable del Operator para que una versión concreta de un Workflow ejecute una acción concreta sobre un Target concreto bajo una versión concreta de un Execution Profile. Su alcance es un único uso, una Mission concreta o esa versión del Workflow; no se concede por Run.
 _Avoid_: Permission level, autonomy score
 
 **Privileged Action**:
