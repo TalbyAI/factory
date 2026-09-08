@@ -21,7 +21,7 @@ Mission cuyo Completion Contract exige que todas sus Missions hijas alcancen un 
 _Avoid_: Parent task, epic
 
 **Gate**:
-Condición auditable que debe satisfacerse antes de que una Mission cambie de estado. Su evaluación produce Pending, Satisfied o Denied con evidencia; sólo Satisfied habilita la transición y Denied no determina por sí solo el resultado de la Mission. La transición consume una evaluación versionada sin que cambios posteriores la reviertan. Puede requerir una aprobación, un resultado externo o la resolución de otras Missions.
+Condición auditable que protege una transición concreta de una Mission. Su evaluación produce Pending, Satisfied o Denied con evidencia; sólo Satisfied habilita la transición protegida. Denied la impide, pero el Workflow puede permitir otra transición, incluida una terminal. La transición consume una evaluación versionada sin que cambios posteriores la reviertan. Puede requerir una aprobación, un resultado externo o la resolución de otras Missions.
 _Avoid_: Workflow step, status
 
 **Human Gate**:
@@ -31,7 +31,7 @@ Gate decidido por el Operator. Su decisión puede sustituirse de forma auditada 
 Gate evaluado mediante observaciones de un sistema externo obtenidas por eventos y reconciliación. La falta de una observación fiable produce Pending, no Denied.
 
 **Mission Gate**:
-Gate evaluado a partir del estado de otras Missions. Completed lo satisface; Failed no; Cancelled requiere una dispensa explícita del Operator y la reaprobación del alcance afectado.
+Gate evaluado a partir del estado de otras Missions. Mientras la Mission referenciada está Open —ya esté Ready, Running o Waiting— produce Pending; Completed produce Satisfied; Failed produce Denied; Cancelled produce Satisfied sólo con dispensa explícita del Operator y reaprobación del alcance afectado, y Denied en otro caso.
 
 **Work Type**:
 Clasificación inmutable que determina qué Workflow y contratos de Artifact corresponden a un trabajo.
