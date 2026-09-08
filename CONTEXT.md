@@ -9,16 +9,29 @@ Control plane local-first para gobernar trabajo de ingeniería de software asist
 _Avoid_: Administrator, developer user
 
 **Mission**:
-Unidad gobernable de trabajo con objetivo, Work Type y Completion Contract inmutables. Puede consumir y producir Artifacts, depender de otras Missions y coordinar Missions hijas.
+Unidad gobernable de trabajo con objetivo, Work Type y Completion Contract inmutables. Permanece Open hasta completar su contrato, declararse inalcanzable o retirarse su intención, terminando respectivamente como Completed, Failed o Cancelled, sin reapertura. Ready, Running y Waiting son situaciones operativas derivadas de sus Runs, Gates y transiciones disponibles; una Run fallida no la falla automáticamente. Puede consumir y producir Artifacts, depender de otras Missions y coordinar Missions hijas.
 _Avoid_: Case, Unit of Work, Work Item
+
+**Run**:
+Ejecución durable de un Workflow asociada a una Mission. Recorre Queued, Running y Suspended antes de terminar como Succeeded, Failed o Cancelled; Stalled es una condición derivada y timeout un motivo de fallo. Una Mission admite como máximo una Run no terminal. La Run conserva su identidad durante retries internos, suspensiones, reanudaciones y recuperación tras una caída; reintentar después de un resultado terminal crea una nueva Run enlazada con la anterior. Su éxito no completa por sí solo la Mission.
+_Avoid_: Mission, Agent Session
 
 **Composite Mission**:
 Mission cuyo Completion Contract exige que todas sus Missions hijas alcancen un estado terminal admisible.
 _Avoid_: Parent task, epic
 
 **Gate**:
-Condición auditable que debe satisfacerse antes de que una Mission cambie de estado. Puede requerir una aprobación, un resultado externo o la resolución de otras Missions.
+Condición auditable que protege una transición concreta de una Mission. Su evaluación produce Pending, Satisfied o Denied con evidencia; sólo Satisfied habilita la transición protegida. Denied la impide, pero el Workflow puede permitir otra transición, incluida una terminal. La transición consume una evaluación versionada sin que cambios posteriores la reviertan. Puede requerir una aprobación, un resultado externo o la resolución de otras Missions.
 _Avoid_: Workflow step, status
+
+**Human Gate**:
+Gate decidido por el Operator. Su decisión puede sustituirse de forma auditada mientras ninguna transición la haya consumido.
+
+**External Gate**:
+Gate evaluado mediante observaciones de un sistema externo obtenidas por eventos y reconciliación. La falta de una observación fiable produce Pending, no Denied.
+
+**Mission Gate**:
+Gate evaluado a partir del estado de otras Missions. Mientras la Mission referenciada está Open —ya esté Ready, Running o Waiting— produce Pending; Completed produce Satisfied; Failed produce Denied; Cancelled produce Satisfied sólo con dispensa explícita del Operator y reaprobación del alcance afectado, y Denied en otro caso.
 
 **Work Type**:
 Clasificación inmutable que determina qué Workflow y contratos de Artifact corresponden a un trabajo.
