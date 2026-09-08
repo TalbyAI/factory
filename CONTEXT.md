@@ -41,6 +41,22 @@ _Avoid_: Ticket type, workflow type
 Proceso principal seleccionado para una ejecución; puede componer fases o subflujos, pero conserva la autoridad sobre el estado, los reintentos y la cancelación.
 _Avoid_: Pipeline, agent loop
 
+**Execution Profile**:
+Política versionada que fija el aislamiento, el acceso al filesystem y a la red, y los límites de recursos bajo los que puede ejecutarse una Run.
+_Avoid_: Environment, runtime configuration
+
+**Target**:
+Recurso externo concreto que una acción puede leer o modificar, como un repositorio, proyecto o servicio. Se identifica por separado del Execution Profile.
+_Avoid_: Environment, destination
+
+**Autonomy Grant**:
+Autorización revocable y auditable del Operator para que un Workflow versionado ejecute una acción concreta sobre un Target bajo un Execution Profile. Puede limitarse a una ejecución, una Mission o esa versión del Workflow.
+_Avoid_: Permission level, autonomy score
+
+**Privileged Action**:
+Acción con efectos externos o sensibilidad de seguridad que requiere un Autonomy Grant o una aprobación exacta. Una acción no clasificada se considera privilegiada.
+_Avoid_: Tool call, workflow step
+
 **Workflow Router**:
 Reglas deterministas que seleccionan un Workflow usando el Work Type, el origen y sus metadatos; cualquier clasificación ambigua requiere confirmación del Operator.
 _Avoid_: AI router, dispatcher
