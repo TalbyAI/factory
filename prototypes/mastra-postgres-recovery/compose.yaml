@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: factory_prototype
+      POSTGRES_USER: prototype
+      POSTGRES_PASSWORD: prototype
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prototype -d factory_prototype"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - mastra-recovery-prototype:/var/lib/postgresql/data
+
+  prototype:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://prototype:prototype@postgres:5432/factory_prototype
+
+volumes:
+  mastra-recovery-prototype:
