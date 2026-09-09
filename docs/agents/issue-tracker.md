@@ -32,7 +32,7 @@ Before closing an issue, inspect both the working tree (`git status --short`) an
 - Link the issue with `Closes #<work issue>` (and use `Part of #<parent issue>` when applicable).
 - Do not run `gh issue close`; the original issue closes only after the pull request is reviewed, approved, and merged through GitHub.
 
-Directly close an issue only when it has no associated repository changes, or when the user explicitly requests an exception.
+Directly close an issue only when it has no associated repository changes.
 
 ## Skill operations
 

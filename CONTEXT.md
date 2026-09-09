@@ -74,11 +74,11 @@ Recurso de un proveedor externo que aporta contexto inicial a una Mission, como 
 _Avoid_: External Mission, Work Item
 
 **Import Snapshot**:
-Captura inmutable de los campos relevantes de uno o más External Source Items en el momento de importar una Mission. Fija las condiciones iniciales para extraer los requisitos del Work Type; cambios externos posteriores no las modifican.
+Captura inmutable de los campos relevantes de uno o más External Source Items en el momento de importar una Mission. Fija las condiciones iniciales para derivar los requisitos de la Mission según su Work Type inmutable; cambios externos posteriores no las modifican.
 _Avoid_: Live input, synchronized context
 
 **Mission Intake**:
-Transformación del Import Snapshot en requisitos del Work Type y revisión de su completitud por el Operator. Los requisitos inciertos o insuficientes quedan `To Complete` y deben completarse antes de iniciar la ejecución.
+Transformación del Import Snapshot en requisitos de la Mission según su Work Type inmutable y revisión de la completitud de cada requisito por el Operator. Cada requisito incierto o insuficiente queda en estado `To Complete` y debe completarse antes de iniciar la ejecución.
 _Avoid_: Automatic specification, inference
 
 **Projection Drift**:
