@@ -23,6 +23,17 @@ Infer the repository from `git remote -v`; `gh` does this automatically inside t
 - Use `Part of #<parent issue>` for a longer-running parent such as a Wayfinder Map.
 - Close the parent only when its own completion contract is satisfied, never merely because one child pull request merged.
 
+## Issue closure with repository changes
+
+Before closing an issue, inspect both the working tree (`git status --short`) and the branch delta (`git diff origin/main...HEAD`). If the issue has associated committed or uncommitted repository changes:
+
+- Keep the issue open and propose a pull request from the working branch.
+- Include all changes associated with the issue in that pull request, committing uncommitted changes on the working branch first.
+- Link the issue with `Closes #<work issue>` (and use `Part of #<parent issue>` when applicable).
+- Do not run `gh issue close`; the original issue closes only after the pull request is reviewed, approved, and merged through GitHub.
+
+Directly close an issue only when it has no associated repository changes.
+
 ## Skill operations
 
 - “Publish to the issue tracker”: create a GitHub issue.

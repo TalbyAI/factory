@@ -105,6 +105,22 @@ _Avoid_: Supersede, deprecation
 Representación de mejor esfuerzo del estado y las relaciones de una Mission en GitHub o Azure DevOps. Puede reconciliarse con el origen, pero no sustituye el estado autoritativo ni su fallo reabre una Mission terminada.
 _Avoid_: Replica, synchronized Mission
 
+**External Source Item**:
+Recurso de un proveedor externo que aporta contexto inicial a una Mission, como un issue, pull request o work item. Cada recurso conserva su identidad propia aunque varios contribuyan a la misma Mission.
+_Avoid_: External Mission, Work Item
+
+**Import Snapshot**:
+Captura inmutable de los campos relevantes de uno o más External Source Items en el momento de importar una Mission. Fija las condiciones iniciales para derivar los requisitos de la Mission según su Work Type inmutable; cambios externos posteriores no las modifican.
+_Avoid_: Live input, synchronized context
+
+**Mission Intake**:
+Transformación del Import Snapshot en requisitos de la Mission según su Work Type inmutable y revisión de la completitud de cada requisito por el Operator. Cada requisito incierto o insuficiente queda en estado `To Complete` y debe completarse antes de iniciar la ejecución.
+_Avoid_: Automatic specification, inference
+
+**Projection Drift**:
+Diferencia entre la representación externa que Factory pretende mantener y la observación actual del recurso externo. Genera una notificación pendiente para el Operator, pero no bloquea ni cambia por sí sola la ejecución de la Mission.
+_Avoid_: Synchronized state, automatic conflict resolution
+
 **Completion Contract**:
 Contrato versionado que define las condiciones sobre el Mission Graph efectivo, los Artifacts, las validaciones y los Gates que satisfacen un Work Type, y referencia el validador concreto de esa versión. Cuando una entrada es revisable, exige el `revisionId` exacto y una relación `appliesToRevision`; rechaza cualquier aprobación o plan cuya revisión tenga una Assertion activa `supersedesRevision` o ya no sea la revisión efectiva. `derivedFrom` expresa linaje, no aplicabilidad.
 _Avoid_: Definition of done, success metric
