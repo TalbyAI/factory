@@ -69,6 +69,22 @@ _Avoid_: Attachment, output file
 Representación de mejor esfuerzo del estado y las relaciones de una Mission en GitHub o Azure DevOps. Puede reconciliarse con el origen, pero no sustituye el estado autoritativo de la Factory.
 _Avoid_: Replica, synchronized Mission
 
+**External Source Item**:
+Recurso de un proveedor externo que aporta contexto inicial a una Mission, como un issue, pull request o work item. Cada recurso conserva su identidad propia aunque varios contribuyan a la misma Mission.
+_Avoid_: External Mission, Work Item
+
+**Import Snapshot**:
+Captura inmutable de los campos relevantes de uno o más External Source Items en el momento de importar una Mission. Fija las condiciones iniciales para extraer los requisitos del Work Type; cambios externos posteriores no las modifican.
+_Avoid_: Live input, synchronized context
+
+**Mission Intake**:
+Transformación del Import Snapshot en requisitos del Work Type y revisión de su completitud por el Operator. Los requisitos inciertos o insuficientes quedan `To Complete` y deben completarse antes de iniciar la ejecución.
+_Avoid_: Automatic specification, inference
+
+**Projection Drift**:
+Diferencia entre la representación externa que Factory pretende mantener y la observación actual del recurso externo. Genera una notificación pendiente para el Operator, pero no bloquea ni cambia por sí sola la ejecución de la Mission.
+_Avoid_: Synchronized state, automatic conflict resolution
+
 **Completion Contract**:
 Conjunto de Artifacts de salida, validaciones y aprobación final que define un resultado satisfactorio para un Work Type.
 _Avoid_: Definition of done, success metric
