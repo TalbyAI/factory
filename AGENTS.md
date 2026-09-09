@@ -3,6 +3,7 @@
 ### Issue tracker and pull requests
 
 Issues are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+Before closing an issue, follow the `Issue closure with repository changes` section there.
 
 Treat `main` as protected: make every repository change on a branch and merge it through a pull request.
 
