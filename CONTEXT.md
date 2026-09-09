@@ -17,8 +17,20 @@ Ejecución durable de un Workflow asociada a una Mission. Recorre Queued, Runnin
 _Avoid_: Mission, Agent Session
 
 **Composite Mission**:
-Mission cuyo Completion Contract exige que todas sus Missions hijas alcancen un estado terminal admisible.
+Mission cuyo Completion Contract exige que todas sus Missions hijas alcancen un estado terminal admisible y cuya composición debe cerrarse explícitamente antes de completar. Cada Mission hija tiene una única Composite Mission propietaria; esa composición es distinta de sus dependencias de ejecución. Si la Composite Mission termina como Failed o Cancelled, no espera a las hijas no terminales: las termina en cascada, respectivamente como Failed o Cancelled, y conserva el estado de las hijas ya terminales; una terminación del propietario no deja descendientes activos.
 _Avoid_: Parent task, epic
+
+**Composition Closure**:
+Decisión auditable e irreversible que fija que una Composite Mission no admitirá nuevas Missions hijas, ni eliminará, desvinculará o cambiará de propietario de hijas existentes, y permite evaluar definitivamente su Completion Contract.
+_Avoid_: Freeze, done flag
+
+**Mission Dependency**:
+Relación acíclica y explícita que exige resolver satisfactoriamente una Mission referenciada antes de iniciar la Mission dependiente: Completed la satisface; Failed la deniega; y Cancelled sólo la satisface con dispensa explícita del Operator y reaprobación del alcance afectado, y la deniega en otro caso. Puede cambiarse de forma auditable antes de consumir el inicio, pero no crea propiedad, se infiere de Artifacts ni implica cancelación o fallo en cascada.
+_Avoid_: Composition, prerequisite task
+
+**Execution Frontier**:
+Conjunto derivado de Missions, incluidas Composite Missions, sin propietario o cuyo propietario no es terminal, y cuyas dependencias, entradas y Gates permiten iniciar una transición. La capacidad disponible decide cuáles se ponen en cola, pero no altera la frontera lógica.
+_Avoid_: Queue, schedule
 
 **Gate**:
 Condición auditable que protege una transición concreta de una Mission. Su evaluación produce Pending, Satisfied o Denied con evidencia; sólo Satisfied habilita la transición protegida. Denied la impide, pero el Workflow puede permitir otra transición, incluida una terminal. La transición consume una evaluación versionada sin que cambios posteriores la reviertan. Puede requerir una aprobación, un resultado externo o la resolución de otras Missions.
