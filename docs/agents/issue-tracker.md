@@ -34,6 +34,20 @@ Before closing an issue, inspect both the working tree (`git status --short`) an
 
 Directly close an issue only when it has no associated repository changes.
 
+## Prototype issue workflow
+
+A Prototype Artifact committed to this repository is an associated repository change. “Throwaway” describes its production status, not permission to discard it or bypass integration.
+
+For a prototype linked to an issue:
+
+1. Preserve the Artifact and its report on a `prototype/*` branch.
+2. Open a pull request containing the prototype, with `Closes #<prototype issue>` and, for a Wayfinder child, `Part of #<map issue>`.
+3. Update the prototype issue body with the observed results, evidence links, proposed verdict, and pull request.
+4. Keep the issue open while the pull request is reviewed. Let the merge close it through the `Closes` link.
+5. After merge and closure, append the decision pointer to the Wayfinder map.
+
+Do not delete the Artifact or manufacture an empty branch delta merely to make direct issue closure permissible. If the Artifact should not enter `main`, preserve it and ask the user to choose a repository-native archive or a different PR destination before closing the issue.
+
 ## Skill operations
 
 - “Publish to the issue tracker”: create a GitHub issue.
