@@ -97,6 +97,22 @@ _Avoid_: Fact, mutable metadata
 Histórico append-only de las Assertions emitidas sobre una Mission. Su vista efectiva para una secuencia excluye las Assertions retiradas y es la que evalúan los contratos.
 _Avoid_: Mutable state, fact store
 
+**Audit Event**:
+Registro inmutable de una solicitud, autorización, transición, evaluación, efecto o intento relevante de una Mission. Conserva actor, causa, secuencia y resultado para explicar cómo ocurrió, pero no sustituye el estado semántico del Mission Graph ni puede cambiarlo por sí solo.
+_Avoid_: Log, telemetry, mutable audit row
+
+**Operational Telemetry**:
+Observaciones estructuradas —logs, traces y métricas— destinadas al diagnóstico operativo y la medición agregada. No es autoritativa para el estado, la autorización ni la satisfacción de un Completion Contract; su muestreo o pérdida no cambia una Mission.
+_Avoid_: Audit Event, evidence
+
+**Usage and Cost Record**:
+Registro inmutable del consumo observable de una Run o acción —llamadas, tokens disponibles, duración y coste exacto o estimado— que conserva `unknown` cuando el proveedor no permite determinar un valor. Permite gobernar presupuestos y medir resultados, pero no prueba por sí solo la satisfacción de un Completion Contract.
+_Avoid_: Billing record, success metric
+
+**Evidence**:
+Artifact u observación externa referenciada explícitamente por un Gate o Completion Contract para justificar una decisión o aceptación. La Operational Telemetry no constituye Evidence por sí sola.
+_Avoid_: Raw log, proof by metric
+
 **Retraction**:
 Assertion que retira otra Assertion identificada exactamente. Reemplazar un valor publica el nuevo valor y la Retraction del anterior de forma atómica.
 _Avoid_: Supersede, deprecation
