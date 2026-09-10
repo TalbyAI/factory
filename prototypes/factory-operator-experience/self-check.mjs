@@ -9,6 +9,7 @@ const situations = new Set(['Ready', 'Running', 'Waiting', 'Stalled']);
 const runStates = new Set(['Queued', 'Running', 'Suspended', 'Succeeded', 'Failed', 'Cancelled']);
 const gateStates = new Set(['Pending', 'Satisfied', 'Denied']);
 const frontierStatuses = new Set(['blocked', 'waiting', 'eligible']);
+const supportedAuthorities = new Set(['Local inspection only', 'Exact Operator approval', 'Autonomy Grant']);
 
 assert.equal(fixture.missions.length, 5);
 assert(fixture.missions.every((mission) => missionStates.has(mission.state)));
@@ -22,7 +23,7 @@ assert(fixture.missions.every((mission) => mission.nextActionSimulated === true)
 assert(fixture.missions.every((mission) => mission.revisionValid === true));
 assert(fixture.missions.every((mission) => typeof mission.revisionId === 'string'));
 assert(fixture.missions.every((mission) => Array.isArray(mission.artifacts) && mission.artifacts.length > 0));
-assert(fixture.missions.every((mission) => typeof mission.authority === 'string' && mission.authority.length > 0));
+assert(fixture.missions.every((mission) => supportedAuthorities.has(mission.authority)));
 
 const attentionOrder = [...fixture.missions]
   .sort((left, right) => left.attentionRank - right.attentionRank || left.id.localeCompare(right.id))
@@ -76,8 +77,21 @@ delete reviewMissionWithoutRevision.revisionValid;
 assert.equal(actionPolicy(reviewMissionWithoutRevision).disabled, true);
 const featureGateMission = missionsById.get('mission-feature-gate');
 assert.equal(featureGateMission.authority, 'Exact Operator approval');
+assert.equal(featureGateMission.nextActionGateId, 'gate-export-scope');
 assert.equal(featureGateMission.gates[0].status, 'Pending');
 assert.equal(actionPolicy(featureGateMission).disabled, false);
+const featureGateWithTwoPendingGates = {
+  ...featureGateMission,
+  gates: [
+    featureGateMission.gates[0],
+    { ...featureGateMission.gates[0], id: 'gate-other-scope', name: 'Other scope', status: 'Pending' }
+  ]
+};
+assert.deepEqual(actionPolicy(featureGateWithTwoPendingGates).reason, {
+  code: 'gate-invalid',
+  gateName: 'Other scope',
+  gateStatus: 'Pending'
+});
 assert.equal(actionPolicy({ ...featureGateMission, revisionValid: false }).disabled, true);
 const featureGateMissionWithoutRevision = { ...featureGateMission };
 delete featureGateMissionWithoutRevision.revisionValid;
@@ -86,6 +100,9 @@ const driftMission = missionsById.get('mission-bug-drift');
 assert.equal(driftMission.authority, 'Exact Operator approval');
 assert.equal(driftMission.gates[0].status, 'Pending');
 assert.equal(actionPolicy(driftMission).disabled, true);
+const unknownAuthorityMission = { ...missionsById.get('mission-change-proposal'), authority: 'Unknown authority' };
+assert.equal(actionPolicy(unknownAuthorityMission).disabled, true);
+assert.deepEqual(actionPolicy(unknownAuthorityMission).reason, { code: 'authority-invalid' });
 
 const artifactIds = fixture.missions.flatMap((mission) => mission.artifacts.map((artifact) => artifact.id));
 assert.equal(new Set(artifactIds).size, artifactIds.length);

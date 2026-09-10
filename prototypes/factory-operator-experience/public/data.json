@@ -12,6 +12,7 @@
       "badges": ["Human Gate"],
       "children": ["mission-feature-implementation"],
       "nextAction": "Approve the export scope gate",
+      "nextActionGateId": "gate-export-scope",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Exact Operator approval",
