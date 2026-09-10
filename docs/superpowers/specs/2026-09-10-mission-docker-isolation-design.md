@@ -29,9 +29,11 @@ La configuración candidata del contenedor será:
   otras rutas del host;
 - sólo `MISSION_ID` y `SCENARIO` como variables explícitas.
 
-El controlador no pasará secretos ni montará el Docker socket; sólo montará los
-directorios del host propios de cada Mission y calculará el SHA-256 de cada
-Artifact producido. La identidad de cada
+El controlador no pasará secretos a la Mission ni montará el Docker socket; para
+la prueba negativa puede pasar el sentinel host-only `FACTORY_TEST_SECRET` a
+Docker/Compose, que debe excluirlo de la Mission. Sólo montará los directorios
+del host propios de cada Mission y calculará el SHA-256 de cada Artifact
+producido. La identidad de cada
 contenedor y la configuración efectiva se conservarán en la evidencia.
 
 ## Frontera de confianza

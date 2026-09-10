@@ -206,7 +206,8 @@ volumes, networks, and image tag after cleanup and assert that none remain.
 Main must create a unique os.tmpdir scratch directory, write a host-only
 host-secret.txt outside both checkouts, create alpha and beta with different
 markers, build one unique lower-case image tag, and run the two Missions through
-Promise.all with distinct project and container names.
+Promise.allSettled with distinct project and container names, aggregating both
+settlements before final cleanup.
 
 Assert both reports preserve their own markers and hashes, have distinct
 container IDs and output directories, and contain no host sentinel. Write the
