@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { config } from './config.mjs';
 import { createPool } from './db.mjs';
 import { json, readJson } from './protocol.mjs';
@@ -65,9 +64,31 @@ async function proxyEvents(req, res, runId, after) {
       connection: 'keep-alive',
     });
     const body = Readable.fromWeb(upstream.body);
-    await pipeline(body, res);
+    for await (const chunk of body) {
+      if (!res.write(chunk)) {
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            body.off('error', onError);
+            res.off('drain', onDrain);
+            res.off('close', onClose);
+          };
+          const onDrain = () => { cleanup(); resolve(); };
+          const onClose = () => { cleanup(); resolve(); };
+          const onError = error => { cleanup(); reject(error); };
+          body.once('error', onError);
+          res.once('drain', onDrain);
+          res.once('close', onClose);
+        });
+        if (downstreamClosed) return;
+      }
+    }
+    res.end();
   } catch (error) {
-    if (downstreamClosed) return;
+    if (downstreamClosed && (
+      error?.name === 'AbortError'
+      || error?.code === 'ERR_STREAM_PREMATURE_CLOSE'
+      || error?.code === 'ERR_STREAM_DESTROYED'
+    )) return;
     throw error;
   } finally {
     req.off('aborted', disconnect);
@@ -165,7 +186,7 @@ async function main() {
       if (req.method === 'GET' && events) {
         const after = Number(url.searchParams.get('after') ?? 0);
         if (!Number.isInteger(after) || after < 0) return json(res, 400, { error: 'after must be a non-negative integer' });
-        return proxyEvents(req, res, decodeURIComponent(events[1]), after);
+        return await proxyEvents(req, res, decodeURIComponent(events[1]), after);
       }
       const commands = url.pathname.match(/^\/api\/runs\/([^/]+)\/commands$/);
       if (req.method === 'POST' && commands) {
@@ -179,7 +200,7 @@ async function main() {
       return json(res, 404, { error: 'not found' });
     } catch (error) {
       if (!res.headersSent) return json(res, 500, { error: error.message });
-      res.destroy(error);
+      res.end();
     }
   });
   server.listen(config.bffPort, '127.0.0.1');
