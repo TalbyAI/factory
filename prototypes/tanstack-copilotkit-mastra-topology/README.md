@@ -6,7 +6,7 @@ workflow state, SSE replay, and operator approval.
 From this directory, start it with one command:
 
 ```sh
-npm ci && docker compose up -d postgres && npm run self-check && npm run prototype
+npm ci && docker compose up -d --wait postgres && npm run self-check && npm run prototype
 ```
 
 On a clean checkout, `self-check` runs before leaving the supervisor running
