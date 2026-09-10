@@ -131,9 +131,10 @@ async function nextEvents(runId, after, matches, timeout = 5_000, opened, contro
       const before = cursor;
       const response = await request(`/api/runs/${encodeURIComponent(runId)}/events?after=${cursor}`, { signal: controller.signal });
       assert.equal(response.status, 200);
+      assert.ok(response.body, 'SSE response must have a body');
+      reader = response.body.getReader();
       opened?.();
       opened = undefined;
-      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       for (;;) {
@@ -156,10 +157,12 @@ async function nextEvents(runId, after, matches, timeout = 5_000, opened, contro
         }
         if (done) break;
       }
+      await reader.cancel().catch(() => {});
+      reader = undefined;
       if (cursor === before) return undefined;
     }
   } catch (error) {
-    if (timedOut && error.name === 'AbortError') return undefined;
+    if (timedOut || controller.signal.aborted) return undefined;
     throw error;
   } finally {
     clearTimeout(timer);
@@ -168,14 +171,38 @@ async function nextEvents(runId, after, matches, timeout = 5_000, opened, contro
 }
 
 function liveNextEvent(runId, after, matches) {
-  let markOpen;
   const controller = new AbortController();
-  const opened = new Promise(resolve => { markOpen = resolve; });
-  const event = nextEvents(runId, after, matches, 5_000, markOpen, controller);
+  let resolveOpened;
+  let rejectOpened;
+  let openedSettled = false;
+  let openTimer;
+  const settleOpened = (settle, value) => {
+    if (openedSettled) return;
+    openedSettled = true;
+    clearTimeout(openTimer);
+    settle(value);
+  };
+  const opened = new Promise((resolve, reject) => {
+    resolveOpened = value => settleOpened(resolve, value);
+    rejectOpened = error => settleOpened(reject, error);
+  });
+  opened.catch(() => {});
+  const event = nextEvents(runId, after, matches, 5_000, resolveOpened, controller).then(value => {
+    if (!openedSettled) rejectOpened(new Error('SSE closed before opening'));
+    return value;
+  }, error => {
+    rejectOpened(error);
+    throw error;
+  });
+  openTimer = setTimeout(() => {
+    controller.abort();
+    rejectOpened(new Error('Timed out waiting for live SSE'));
+  }, 5_000);
   return {
     opened,
     event,
     async cancel() {
+      if (!openedSettled) resolveOpened();
       controller.abort();
       await event.catch(() => {});
     },
@@ -192,6 +219,18 @@ async function countForRun(pool, table, runId) {
   await assertScratchDatabase(pool);
   const { rows: [row] } = await pool.query(`select count(*) from topology_factory.${table} where run_id = $1`, [runId]);
   return Number(row.count);
+}
+
+async function markWorkflowRunning(pool, runId) {
+  const result = await pool.query(
+    `update topology_mastra."mastra_workflow_snapshot"
+     set snapshot = jsonb_set(snapshot, '{status}', '"running"'::jsonb)
+     where workflow_name = 'topology-workflow' and run_id = $1 and snapshot->>'status' = 'suspended'
+     returning snapshot->>'status' as status`,
+    [runId],
+  );
+  assert.equal(result.rowCount, 1, 'Expected a suspended Mastra snapshot to mark running');
+  assert.equal(result.rows[0].status, 'running');
 }
 
 async function startRun() {
@@ -286,18 +325,21 @@ async function main() {
       'insert into topology_factory.effects (idempotency_key, run_id) values ($1, $2)',
       [`${effectWithoutFinish.runId}:publish`, effectWithoutFinish.runId],
     );
+    assert.equal(await nextEvents(effectWithoutFinish.runId, effectWithoutFinishPending.sequence, event => event.kind === 'workflow.completed', 250), undefined);
+    await markWorkflowRunning(pool, effectWithoutFinish.runId);
     const liveCompletion = liveNextEvent(
       effectWithoutFinish.runId,
       effectWithoutFinishPending.sequence,
       event => event.kind === 'workflow.completed',
     );
-    await liveCompletion.opened;
     try {
+      await liveCompletion.opened;
       const effectRecovery = await approve(effectWithoutFinish.runId, 'recover-effect-without-finish');
       const effectRecoveryBody = await effectRecovery.text();
       assert.equal(effectRecovery.status, 200, effectRecoveryBody);
       assert.equal(JSON.parse(effectRecoveryBody).gate, 'satisfied');
       assert.equal((await liveCompletion.event).runId, effectWithoutFinish.runId);
+      assert.equal((await scalar(pool, `select count(*) from topology_mastra.events where run_id = '${effectWithoutFinish.runId}' and kind = 'workflow-finish' and payload->'chunk'->'payload'->>'workflowStatus' = 'success'`)).value, '1');
       assert.equal(await countForRun(pool, 'effects', effectWithoutFinish.runId), 1);
     } finally {
       await liveCompletion.cancel();

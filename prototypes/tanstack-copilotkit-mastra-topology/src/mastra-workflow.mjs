@@ -12,11 +12,16 @@ export function makeWorkflow(pool) {
     resumeSchema: z.object({ command: z.literal('approve'), idempotencyKey: z.string() }),
     suspendSchema: z.object({ gate: z.literal('operator-approval') }),
     execute: async ({ inputData, resumeData, runId, suspend, writer }) => {
+      const effectKey = `${runId}:publish`;
       if (!resumeData) {
+        const existingEffect = await pool.query(
+          'select 1 from topology_factory.effects where run_id = $1 and idempotency_key = $2 limit 1',
+          [runId, effectKey],
+        );
+        if (existingEffect.rowCount) return { runId: inputData.runId, approved: true, effectKey };
         await writer.custom({ type: 'gate.pending', runId, gate: 'operator-approval' });
         return suspend({ gate: 'operator-approval' });
       }
-      const effectKey = `${runId}:publish`;
       const response = await fetch(`${config.bffUrl}/internal/effects`, {
         method: 'POST',
         headers: {

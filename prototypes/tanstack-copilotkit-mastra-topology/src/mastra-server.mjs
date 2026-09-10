@@ -97,6 +97,20 @@ async function main() {
     }
   }
 
+  async function restartRun(runId, run) {
+    activeRuns.set(runId, run);
+    try {
+      const result = await run.restart({
+        outputWriter: chunk => chunk.type === 'workflow-finish' ? undefined : publishChunk(runId, chunk),
+      });
+      await publishChunk(runId, { type: 'workflow-finish', payload: { workflowStatus: result.status } });
+      if (result.status === 'failed') throw result.error;
+      return result;
+    } finally {
+      activeRuns.delete(runId);
+    }
+  }
+
   async function startRun(runId) {
     let output;
     try {
@@ -116,6 +130,8 @@ async function main() {
     try {
       const workflow = mastra.getWorkflow('topology-workflow');
       const run = await workflow.createRun({ runId });
+      const snapshot = await workflow.getWorkflowRunById(runId);
+      if (snapshot?.status === 'running') return await restartRun(runId, run);
       output = run.resumeStream({ step: 'operator-gate', resumeData });
       activeRuns.set(runId, output);
       return await consume(runId, output);

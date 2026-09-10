@@ -11,6 +11,7 @@
   <dl>
     <dt>runId</dt><dd id="run-id">—</dd>
     <dt>Gate</dt><dd id="gate">—</dd>
+    <dt>Workflow</dt><dd id="workflow">—</dd>
     <dt>Última secuencia</dt><dd id="sequence">0</dd>
     <dt>Último comando</dt><dd id="command">—</dd>
   </dl>
@@ -18,12 +19,13 @@
   <script>
     const operatorKey = 'prototype-operator-key';
     const eventKinds = ['workflow-start', 'workflow-step-start', 'workflow-step-finish', 'workflow-step-suspended', 'workflow-finish', 'workflow.error', 'gate.pending'];
-    const state = { runId: '', gate: '—', sequence: 0, idempotencyKey: '', stream: null };
-    const view = Object.fromEntries(['run-id', 'gate', 'sequence', 'command', 'events'].map(id => [id, document.getElementById(id)]));
+    const state = { runId: '', gate: '—', workflow: '—', sequence: 0, idempotencyKey: '', stream: null };
+    const view = Object.fromEntries(['run-id', 'gate', 'workflow', 'sequence', 'command', 'events'].map(id => [id, document.getElementById(id)]));
 
     function render() {
       view['run-id'].textContent = state.runId || '—';
       view.gate.textContent = state.gate;
+      view.workflow.textContent = state.workflow;
       view.sequence.textContent = state.sequence;
     }
 
@@ -36,10 +38,11 @@
       if (value.sequence <= state.sequence) return;
       state.sequence = value.sequence;
       if (value.kind === 'gate.pending') state.gate = 'pending';
+      if (value.kind === 'workflow-start') state.workflow = 'running';
       if (value.kind === 'workflow-finish') {
-        if (value.chunk?.payload?.workflowStatus === 'success') state.gate = 'satisfied';
-        if (value.chunk?.payload?.workflowStatus === 'failed') state.gate = 'failed';
+        state.workflow = value.chunk?.payload?.workflowStatus || 'finished';
       }
+      if (value.kind === 'workflow.error') state.workflow = 'failed';
       view.events.textContent += `${JSON.stringify(value)}\n`;
       render();
       connect();
@@ -64,6 +67,7 @@
         const value = await request('/api/runs', { method: 'POST', headers: { 'x-operator-key': operatorKey } });
         state.runId = value.runId;
         state.gate = 'pending';
+        state.workflow = 'running';
         state.sequence = 0;
         state.idempotencyKey = crypto.randomUUID();
         view.events.textContent = '';
