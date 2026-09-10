@@ -15,7 +15,7 @@
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Exact Operator approval",
-      "frontier": { "status": "waiting", "reason": "Human Gate gate-export-scope is Pending." },
+      "frontier": { "status": "waiting", "reason": "Human Gate gate-export-scope está Pending." },
       "overview": "Add saved filters to customer exports without changing existing defaults.",
       "timeline": [{
         "at": "2026-09-10T08:30:00Z",
@@ -62,7 +62,7 @@
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Autonomy Grant",
-      "frontier": { "status": "blocked", "reason": "Mission dependency dep-customer-export-fixtures is Blocked; it is not eligible." },
+      "frontier": { "status": "blocked", "reason": "La Mission Dependency dep-customer-export-fixtures está Blocked; no es eligible." },
       "overview": "Implement saved customer export filters and verify them against export fixtures.",
       "timeline": [{
         "at": "2026-09-10T08:05:00Z",
@@ -76,25 +76,25 @@
       }],
       "gates": [{
         "id": "gate-export-implementation-review",
-        "kind": "Mission Gate",
-        "name": "Export implementation review",
+        "kind": "External Gate",
+        "name": "Export implementation checks",
         "status": "Satisfied",
         "owner": "Engineering",
-        "evidence": { "evidenceId": "evidence-customer-export-implementation", "revisionId": "evidence-customer-export-implementation-r1", "appliesToRevision": "mission-feature-implementation-r1" }
+        "evidence": { "evidenceId": "evidence-export-implementation-checks", "revisionId": "evidence-export-implementation-checks-r1", "appliesToRevision": "mission-feature-implementation-r1" }
       }],
       "dependencies": [{ "id": "dep-customer-export-fixtures", "name": "Customer export fixtures", "status": "Blocked" }],
       "evidence": [{
-        "id": "evidence-customer-export-implementation",
+        "id": "evidence-export-implementation-checks",
         "kind": "Test",
-        "label": "Customer export filter suite",
-        "status": "Pending",
-        "revisionId": "evidence-customer-export-implementation-r1",
+        "label": "Export implementation checks",
+        "status": "Verified",
+        "revisionId": "evidence-export-implementation-checks-r1",
         "refs": [
           { "type": "Artifact", "id": "artifact-customer-export-implementation", "revisionId": "artifact-customer-export-implementation-r1" },
           { "type": "Dependency", "id": "dep-customer-export-fixtures" }
         ]
       }],
-      "artifacts": [{ "id": "artifact-customer-export-implementation", "name": "Customer export implementation Artifact", "revisionId": "artifact-customer-export-implementation-r1", "status": "Draft", "immutable": true }],
+      "artifacts": [{ "id": "artifact-customer-export-implementation", "name": "Customer export implementation Artifact", "revisionId": "artifact-customer-export-implementation-r1", "status": "Verified", "immutable": true }],
       "drift": []
     },
     {
@@ -111,7 +111,7 @@
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Local inspection only",
-      "frontier": { "status": "waiting", "reason": "Gate gate-payment-review is Pending while automated checks run." },
+      "frontier": { "status": "waiting", "reason": "El Gate gate-payment-review está Pending mientras se ejecutan las comprobaciones automáticas." },
       "overview": "Review the pull request that adjusts payment retry backoff.",
       "timeline": [{
         "at": "2026-09-10T07:45:00Z",
@@ -148,7 +148,7 @@
     },
     {
       "id": "mission-change-proposal",
-      "title": "Rotate staging credentials",
+      "title": "Evaluate staging credential rotation proposal",
       "workType": "Change Proposal",
       "state": "Open",
       "situation": "Ready",
@@ -156,42 +156,42 @@
       "revisionId": "mission-change-proposal-r1",
       "run": null,
       "badges": [],
-      "nextAction": "Start the change run",
+      "nextAction": "Inspect the change proposal",
       "nextActionSimulated": true,
       "revisionValid": true,
-      "authority": "Autonomy Grant",
-      "frontier": { "status": "eligible", "reason": "Gate gate-staging-window is Satisfied and no dependencies block start." },
-      "overview": "Rotate staging credentials during the next approved maintenance window.",
+      "authority": "Local inspection only",
+      "frontier": { "status": "eligible", "reason": "El Gate gate-proposal-completeness está Satisfied y ninguna dependencia bloquea la inspección." },
+      "overview": "Evaluate the proposal to rotate staging credentials during the next approved maintenance window.",
       "timeline": [{
         "at": "2026-09-10T07:20:00Z",
-        "label": "Proposal validated",
-        "detail": "All preflight evidence is available.",
+        "label": "Proposal completeness verified",
+        "detail": "The staging credential-rotation proposal is complete for inspection.",
         "refs": [
-          { "type": "Gate", "id": "gate-staging-window" },
-          { "type": "Artifact", "id": "artifact-credential-rotation", "revisionId": "artifact-credential-rotation-r1" }
+          { "type": "Gate", "id": "gate-proposal-completeness" },
+          { "type": "Artifact", "id": "artifact-staging-credential-proposal", "revisionId": "artifact-staging-credential-proposal-r1" }
         ]
       }],
       "gates": [{
-        "id": "gate-staging-window",
+        "id": "gate-proposal-completeness",
         "kind": "Human Gate",
-        "name": "Maintenance window",
+        "name": "Proposal completeness",
         "status": "Satisfied",
-        "owner": "Operations",
-        "evidence": { "evidenceId": "evidence-credential-rotation", "revisionId": "evidence-credential-rotation-r1", "appliesToRevision": "mission-change-proposal-r1" }
+        "owner": "Product",
+        "evidence": { "evidenceId": "evidence-staging-credential-proposal", "revisionId": "evidence-staging-credential-proposal-r1", "appliesToRevision": "mission-change-proposal-r1" }
       }],
       "dependencies": [],
       "evidence": [{
-        "id": "evidence-credential-rotation",
-        "kind": "Runbook",
-        "label": "Credential rotation runbook",
+        "id": "evidence-staging-credential-proposal",
+        "kind": "Proposal",
+        "label": "Staging credential rotation proposal",
         "status": "Verified",
-        "revisionId": "evidence-credential-rotation-r1",
+        "revisionId": "evidence-staging-credential-proposal-r1",
         "refs": [
-          { "type": "Gate", "id": "gate-staging-window" },
-          { "type": "Artifact", "id": "artifact-credential-rotation", "revisionId": "artifact-credential-rotation-r1" }
+          { "type": "Gate", "id": "gate-proposal-completeness" },
+          { "type": "Artifact", "id": "artifact-staging-credential-proposal", "revisionId": "artifact-staging-credential-proposal-r1" }
         ]
       }],
-      "artifacts": [{ "id": "artifact-credential-rotation", "name": "Credential rotation Artifact", "revisionId": "artifact-credential-rotation-r1", "status": "Available", "immutable": true }],
+      "artifacts": [{ "id": "artifact-staging-credential-proposal", "name": "Staging credential rotation proposal Artifact", "revisionId": "artifact-staging-credential-proposal-r1", "status": "Verified", "immutable": true }],
       "drift": []
     },
     {
@@ -208,7 +208,7 @@
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Exact Operator approval",
-      "frontier": { "status": "blocked", "reason": "Gate gate-webhook-replay is Pending and Projection Drift drift-webhook-reconciliation requires intervention." },
+      "frontier": { "status": "blocked", "reason": "El Gate gate-webhook-replay está Pending y Projection Drift drift-webhook-reconciliation requiere intervención." },
       "overview": "Prevent duplicate webhook deliveries after a worker restart.",
       "timeline": [{
         "at": "2026-09-10T06:55:00Z",

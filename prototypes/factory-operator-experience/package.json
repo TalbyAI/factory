@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "prototype": "node server.mjs",
-    "check": "node --check server.mjs",
+    "check": "node --check server.mjs && node --check public/policy.mjs",
     "self-check": "node self-check.mjs"
   }
 }

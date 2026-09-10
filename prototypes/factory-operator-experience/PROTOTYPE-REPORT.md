@@ -7,9 +7,9 @@ Un Workspace Inbox-first permite al Operator identificar la siguiente Mission qu
 ## Walkthrough de aceptación
 
 1. **A1 — Human Gate pendiente** — `mission-feature-gate` aparece primero por `attentionRank`, muestra la situación `Waiting`, el Gate pendiente y ninguna Run iniciada, y permite simular `Approve the export scope gate` con aprobación exacta del Operator.
-2. **A2 — Dependencia bloqueada** — `mission-feature-implementation` muestra la situación `Waiting`, la Execution Frontier `blocked` y la dependencia `Customer export fixtures` como `Blocked`; permite simular el desbloqueo con `Autonomy Grant`.
+2. **A2 — Dependencia bloqueada** — `mission-feature-implementation` muestra la situación `Waiting`, la Execution Frontier `blocked` y la dependencia `Customer export fixtures` como `Blocked`; su `External Gate` `Export implementation checks`, evidencia y Artifact están `Verified`, y permite simular el desbloqueo con `Autonomy Grant`.
 3. **A3 — Review en ejecución** — `mission-pr-review` muestra la Run `Running`; Timeline, Gates y Evidence exponen el review, sus checks y la evidencia disponible, y permite simular la inspección de evidencia local.
-4. **A4 — Mission preparada** — `mission-change-proposal` muestra la situación `Ready`, ninguna Run iniciada, el Gate de mantenimiento `Satisfied` y el Runbook verificado antes de simular `Start the change run` con `Autonomy Grant`.
+4. **A4 — Propuesta preparada** — `mission-change-proposal` muestra la situación `Ready`, ninguna Run iniciada, el Gate de completitud `Satisfied` y la propuesta de rotación de credenciales verificada antes de simular `Inspect the change proposal` como inspección local.
 5. **A5 — Run fallida con Projection Drift** — `mission-bug-drift` conserva la Mission `Open`, muestra la Run `Failed`, la situación `Stalled` y el detalle completo de Projection Drift en Overview; su acción primaria permanece deshabilitada porque el Gate está `Pending`.
 
 ## Evidencia observada
@@ -22,6 +22,7 @@ Un Workspace Inbox-first permite al Operator identificar la siguiente Mission qu
 - La barra presenta una acción recomendada simulada con autoridad explícita y controles secundarios etiquetados como inspecciones simuladas. `simulateAction()` sólo añade actividad local con el resultado `simulated — no external effect`.
 - La única carga de red declarada es el `fetch('/data.json')` inicial; ningún manejador de selección, tabs o acciones invoca endpoints.
 - Tras `bae0aa1`, el walkthrough en navegador confirmó el orden `mission-feature-gate`, `mission-bug-drift`, `mission-feature-implementation`, `mission-pr-review`, `mission-change-proposal`; las cinco pestañas tuvieron contenido, A1–A4 produjeron actividad simulada local y A5 permaneció deshabilitada por su Gate `Pending`.
+- Esta ronda ajusta la semántica del Gate de A2 y de la propuesta A4; no se repitió el walkthrough en navegador.
 - `npm run check`, `npm run self-check` y `git diff --check` finalizaron correctamente.
 
 ## Resultado

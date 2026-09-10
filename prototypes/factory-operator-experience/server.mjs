@@ -4,7 +4,11 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
-const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8' };
+const types = {
+  '.html': 'text/html; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8'
+};
 
 const server = createServer(async (request, response) => {
   const pathname = request.url === '/healthz' ? null : request.url === '/' ? '/index.html' : request.url;

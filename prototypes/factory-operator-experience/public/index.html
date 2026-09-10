@@ -237,7 +237,9 @@
       </section>
     </main>
 
-    <script>
+    <script type="module">
+      import { actionPolicy } from '/policy.mjs';
+
       const state = { missions: [], selectedMissionId: '', tab: 'Overview', activity: [] };
       const tabs = ['Overview', 'Timeline', 'Gates', 'Dependencies', 'Evidence'];
       // El fixture conserva sus valores originales; sólo se traduce la presentación.
@@ -245,7 +247,7 @@
         'Add customer export filters': 'Añadir filtros de exportación de clientes',
         'Implement customer export filters': 'Implementar filtros de exportación de clientes',
         'Review payment retry changes': 'Revisar los cambios de reintentos de pago',
-        'Rotate staging credentials': 'Rotar las credenciales de preproducción',
+        'Evaluate staging credential rotation proposal': 'Evaluar la propuesta de rotación de credenciales de preproducción',
         'Fix duplicate webhook deliveries': 'Corregir las entregas duplicadas de webhooks',
         Waiting: 'En espera',
         'Waiting on Human Gate': 'En espera de Human Gate',
@@ -253,7 +255,7 @@
         'Approve the export scope gate': 'Aprobar el Gate de alcance de exportación',
         'Unblock the customer export fixture dependency': 'Desbloquear la dependencia del fixture de exportación de clientes',
         'Inspect the retry test evidence': 'Inspeccionar la evidencia de pruebas de reintentos',
-        'Start the change run': 'Iniciar la Run del cambio',
+        'Inspect the change proposal': 'Inspeccionar la propuesta de cambio',
         'Reconcile the failed run with the projection': 'Reconciliar la Run fallida con la External Projection',
         'Exact Operator approval': 'Aprobación exacta del Operator',
         'Autonomy Grant': 'Autonomy Grant',
@@ -261,7 +263,7 @@
         'Add saved filters to customer exports without changing existing defaults.': 'Añadir filtros guardados a las exportaciones de clientes sin cambiar los valores predeterminados.',
         'Implement saved customer export filters and verify them against export fixtures.': 'Implementar filtros guardados de exportación de clientes y verificarlos con fixtures de exportación.',
         'Review the pull request that adjusts payment retry backoff.': 'Revisar el pull request que ajusta los intervalos de reintentos de pago.',
-        'Rotate staging credentials during the next approved maintenance window.': 'Rotar las credenciales de preproducción durante la próxima ventana de mantenimiento aprobada.',
+        'Evaluate the proposal to rotate staging credentials during the next approved maintenance window.': 'Evaluar la propuesta de rotación de credenciales de preproducción durante la próxima ventana de mantenimiento aprobada.',
         'Prevent duplicate webhook deliveries after a worker restart.': 'Evitar entregas duplicadas de webhooks tras reiniciar un proceso de trabajo.',
         'Human Gate requested': 'Human Gate solicitado',
         'Scope approval is required before implementation.': 'Se requiere aprobar el alcance antes de la implementación.',
@@ -271,21 +273,21 @@
         'Rule validation is the next executable step.': 'La validación de reglas es el siguiente paso ejecutable.',
         'Review started': 'Revisión iniciada',
         'Automated checks are still running.': 'Las comprobaciones automáticas siguen en ejecución.',
-        'Proposal validated': 'Propuesta validada',
-        'All preflight evidence is available.': 'Toda la evidencia previa está disponible.',
+        'Proposal completeness verified': 'Completitud de la propuesta verificada',
+        'The staging credential-rotation proposal is complete for inspection.': 'La propuesta de rotación de credenciales de preproducción está completa para su inspección.',
         'Run stalled': 'Run estancada',
         'The worker failed before publishing the final artifact.': 'El proceso de trabajo falló antes de publicar el Artifact final.',
         'Export scope': 'Alcance de exportación',
         'Export contract': 'Contrato de exportación',
         'Customer export request': 'Solicitud de exportación de clientes',
-        'Export implementation review': 'Revisión de implementación de exportación',
+        'Export implementation checks': 'Comprobaciones de implementación de exportación',
         'Customer export fixtures': 'Fixtures de exportación de clientes',
-        'Customer export filter suite': 'Suite de filtros de exportación de clientes',
+        Proposal: 'Propuesta', Verified: 'Verificado',
         'Review approval': 'Aprobación de revisión',
         'Payment retry changes': 'Cambios de reintentos de pago',
         'Checks running': 'Comprobaciones en ejecución',
-        'Maintenance window': 'Ventana de mantenimiento',
-        'Credential rotation runbook': 'Procedimiento de rotación de credenciales',
+        'Proposal completeness': 'Completitud de la propuesta',
+        'Staging credential rotation proposal': 'Propuesta de rotación de credenciales de preproducción',
         'Replay verification': 'Verificación de repetición',
         'Worker restart reproduction': 'Reproducción del reinicio del proceso de trabajo',
         'Duplicate delivery trace': 'Traza de entrega duplicada',
@@ -390,6 +392,25 @@
         return `<div class="record-refs">Referencias: ${refs.map((ref) => `${copy(ref.type)} · ${escapeHtml(ref.id)}${ref.revisionId ? ` · revision ${escapeHtml(ref.revisionId)}` : ''}`).join(' · ')}</div>`;
       }
 
+      function missionIdentity(mission) {
+        return `${escapeHtml(mission.id)} · ${copy(mission.title)}`;
+      }
+
+      function renderComposition(mission) {
+        const parent = mission.parentId ? state.missions.find((candidate) => candidate.id === mission.parentId) : null;
+        const children = (mission.children ?? [])
+          .map((childId) => state.missions.find((candidate) => candidate.id === childId))
+          .filter(Boolean);
+        const parentIdentity = parent ? missionIdentity(parent) : 'Sin Mission padre';
+        const childIdentities = children.length ? children.map(missionIdentity).join('<br>') : 'Sin Missions hijas';
+        return `
+          <h3>Composición</h3>
+          <ul class="records">
+            <li class="record"><span class="record-key">Mission padre</span><span class="record-value">${parentIdentity}</span></li>
+            <li class="record"><span class="record-key">Missions hijas</span><span class="record-value">${childIdentities}</span></li>
+          </ul>`;
+      }
+
       function renderOverview(mission) {
         const gateCounts = mission.gates.reduce((counts, gate) => {
           counts[gate.status] = (counts[gate.status] ?? 0) + 1;
@@ -399,7 +420,8 @@
         const metrics = [
           ['Situación operativa', mission.situation],
           ['Run', `${mission.run?.status ?? 'None'} · ${mission.run?.attention ?? 'sin atención'}`],
-          ['Missions hijas / dependencias', `${mission.children?.length ?? 0} / ${mission.dependencies.length}`],
+          ['Missions hijas', String(mission.children?.length ?? 0)],
+          ['Dependencias', String(mission.dependencies.length)],
           ['Gates', gateSummary],
           ['Artifacts', String(mission.artifacts.length)],
           ['Projection Drift', mission.drift.length ? `${mission.drift.length} detectado` : 'Sin drift']
@@ -417,30 +439,24 @@
         return `
           <p class="summary">${copy(mission.overview)}</p>
           <div class="metrics">${metrics.map(([label, value]) => `<div class="metric"><span>${copy(label)}</span><strong>${copy(value)}</strong></div>`).join('')}</div>
+          ${renderComposition(mission)}
           <h3>Execution Frontier</h3><ul class="records">${frontier}</ul>
           ${drift ? `<h3>Detalle de Projection Drift</h3><ul class="records">${drift}</ul>` : ''}`;
       }
 
-      function actionPolicy(mission) {
-        const inspectionOnly = mission.authority === 'Local inspection only';
-        // Inspection only exposes pending evidence locally; it never bypasses a real effect.
-        const approvingGate = mission.authority === 'Exact Operator approval'
-          && mission.nextAction === 'Approve the export scope gate';
-        const invalidGate = inspectionOnly ? null : mission.gates.find((gate) => gate.status !== 'Satisfied'
-          && !(approvingGate && gate.kind === 'Human Gate' && gate.status === 'Pending'));
-        const invalidRevision = mission.revisionValid !== true;
-        const reason = mission.nextActionSimulated !== true ? 'La acción no está marcada como simulada'
-          : invalidRevision ? 'Revisión no vigente' : inspectionOnly ? ''
-          : invalidGate ? `Gate no válido: ${spanishCopy[invalidGate.name] ?? invalidGate.name} (${invalidGate.status})` : '';
-        return {
-          disabled: Boolean(reason),
-          authority: mission.authority,
-          reason
-        };
+      function policyReason(reason) {
+        if (!reason) return '';
+        if (reason.code === 'not-simulated') return 'La acción no está marcada como simulada';
+        if (reason.code === 'revision-invalid') return 'Revisión no vigente';
+        if (reason.code === 'gate-invalid') {
+          return `Gate no válido: ${spanishCopy[reason.gateName] ?? reason.gateName} (${reason.gateStatus})`;
+        }
+        return 'La acción no está disponible';
       }
 
       function renderActions(mission) {
         const policy = actionPolicy(mission);
+        const reason = policyReason(policy.reason);
         const inspectionTabs = [
           mission.gates.length && 'Gates',
           mission.dependencies.length && 'Dependencies',
@@ -450,7 +466,7 @@
           <div class="action-copy">
             <p class="eyebrow">Acción recomendada · PROTOTYPE — local memory only</p>
             <strong>${copy(mission.nextAction)}</strong>
-            <p>Autoridad requerida: ${copy(policy.authority)}${policy.reason ? ` · ${escapeHtml(policy.reason)}` : ''}</p>
+            <p>Autoridad requerida: ${copy(policy.authority)}${reason ? ` · ${escapeHtml(reason)}` : ''}</p>
           </div>
           <div class="action-controls">
             ${inspectionTabs.map((tab) => `<button class="action-button" type="button" data-tab="${tab}">Simular inspección · Ver ${tab}</button>`).join('')}

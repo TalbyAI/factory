@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { actionPolicy } from './public/policy.mjs';
 
 const fixture = JSON.parse(await readFile(new URL('./public/data.json', import.meta.url)));
 const missionsById = new Map(fixture.missions.map((mission) => [mission.id, mission]));
@@ -44,7 +45,16 @@ assert.equal(missionsById.get('mission-change-proposal').frontier.status, 'eligi
 assert.notEqual(missionsById.get('mission-feature-implementation').frontier.status, 'eligible');
 
 assert.equal(missionsById.get('mission-feature-implementation').gates[0].status, 'Satisfied');
+assert.equal(missionsById.get('mission-feature-implementation').gates[0].kind, 'External Gate');
+assert.equal(missionsById.get('mission-feature-implementation').gates[0].name, 'Export implementation checks');
+assert.equal(missionsById.get('mission-feature-implementation').evidence[0].status, 'Verified');
+assert.equal(missionsById.get('mission-feature-implementation').artifacts[0].status, 'Verified');
 assert.equal(missionsById.get('mission-change-proposal').gates[0].status, 'Satisfied');
+assert.equal(missionsById.get('mission-change-proposal').workType, 'Change Proposal');
+assert.equal(missionsById.get('mission-change-proposal').nextAction, 'Inspect the change proposal');
+assert.equal(missionsById.get('mission-change-proposal').authority, 'Local inspection only');
+assert.equal(missionsById.get('mission-change-proposal').gates[0].kind, 'Human Gate');
+assert.equal(missionsById.get('mission-change-proposal').gates[0].name, 'Proposal completeness');
 assert.equal(missionsById.get('mission-feature-gate').run, null);
 assert.equal(missionsById.get('mission-change-proposal').run, null);
 assert.equal(missionsById.get('mission-pr-review').run.status, 'Running');
@@ -52,31 +62,26 @@ assert.equal(missionsById.get('mission-bug-drift').run.status, 'Failed');
 assert(typeof missionsById.get('mission-pr-review').run.id === 'string');
 assert(typeof missionsById.get('mission-bug-drift').run.id === 'string');
 
-function actionIsEnabled(mission) {
-  if (mission.nextActionSimulated !== true || mission.revisionValid !== true) return false;
-  if (mission.authority === 'Local inspection only') return true;
-  const approvingGate = mission.authority === 'Exact Operator approval'
-    && mission.nextAction === 'Approve the export scope gate';
-  return mission.gates.every((gate) => gate.status === 'Satisfied'
-    || (approvingGate && gate.kind === 'Human Gate' && gate.status === 'Pending'));
-}
-
 const reviewMission = missionsById.get('mission-pr-review');
 assert.equal(reviewMission.authority, 'Local inspection only');
 assert.equal(reviewMission.gates[0].status, 'Pending');
-assert.equal(actionIsEnabled(reviewMission), true);
-assert.equal(actionIsEnabled({ ...reviewMission, revisionValid: false }), false);
+assert.equal(actionPolicy(reviewMission).disabled, false);
+assert.equal(actionPolicy({ ...reviewMission, revisionValid: false }).disabled, true);
 const reviewMissionWithoutRevision = { ...reviewMission };
 delete reviewMissionWithoutRevision.revisionValid;
-assert.equal(actionIsEnabled(reviewMissionWithoutRevision), false);
+assert.equal(actionPolicy(reviewMissionWithoutRevision).disabled, true);
+const featureGateMission = missionsById.get('mission-feature-gate');
+assert.equal(featureGateMission.authority, 'Exact Operator approval');
+assert.equal(featureGateMission.gates[0].status, 'Pending');
+assert.equal(actionPolicy(featureGateMission).disabled, false);
+assert.equal(actionPolicy({ ...featureGateMission, revisionValid: false }).disabled, true);
+const featureGateMissionWithoutRevision = { ...featureGateMission };
+delete featureGateMissionWithoutRevision.revisionValid;
+assert.equal(actionPolicy(featureGateMissionWithoutRevision).disabled, true);
 const driftMission = missionsById.get('mission-bug-drift');
 assert.equal(driftMission.authority, 'Exact Operator approval');
 assert.equal(driftMission.gates[0].status, 'Pending');
-assert.equal(actionIsEnabled(driftMission), false);
-assert.equal(actionIsEnabled({ ...driftMission, revisionValid: false }), false);
-const driftMissionWithoutRevision = { ...driftMission };
-delete driftMissionWithoutRevision.revisionValid;
-assert.equal(actionIsEnabled(driftMissionWithoutRevision), false);
+assert.equal(actionPolicy(driftMission).disabled, true);
 
 const artifactIds = fixture.missions.flatMap((mission) => mission.artifacts.map((artifact) => artifact.id));
 assert.equal(new Set(artifactIds).size, artifactIds.length);
