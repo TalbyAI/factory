@@ -260,6 +260,9 @@
         'Exact Operator approval': 'Aprobación exacta del Operator',
         'Autonomy Grant': 'Autonomy Grant',
         'Local inspection only': 'Sólo inspección local',
+        Linked: 'Vinculada',
+        Captured: 'Capturada',
+        'In progress': 'En progreso',
         'Add saved filters to customer exports without changing existing defaults.': 'Añadir filtros guardados a las exportaciones de clientes sin cambiar los valores predeterminados.',
         'Implement saved customer export filters and verify them against export fixtures.': 'Implementar filtros guardados de exportación de clientes y verificarlos con fixtures de exportación.',
         'Review the pull request that adjusts payment retry backoff.': 'Revisar el pull request que ajusta los intervalos de reintentos de pago.',
@@ -377,19 +380,22 @@
             { type: 'appliesToRevision', id: record.evidence.appliesToRevision }
           ]],
           Dependencies: (record) => [record.id, record.name, record.status, record.refs],
-          Evidence: (record) => [record.kind, record.label, `${record.status} · revision ${record.revisionId}`, record.refs]
+          Evidence: (record) => [record.kind, record.label, record.status, record.refs, record.revisionId]
         };
         const records = mission[state.tab.toLowerCase()];
         if (!records.length) return `<div class="empty">No hay registros de ${state.tab} para esta Mission.</div>`;
         return `<ul class="records">${records.map((record) => {
-          const [key, title, detail, refs] = renderers[state.tab](record);
-          return `<li class="record"><span class="record-key">${copy(key)}</span><span class="record-value"><strong>${copy(title)}</strong>${copy(detail)}${renderRefs(refs)}</span></li>`;
+          const [key, title, detail, refs, revisionId] = renderers[state.tab](record);
+          const renderedDetail = state.tab === 'Evidence'
+            ? `${copy(detail)} · revisión ${escapeHtml(revisionId)}`
+            : copy(detail);
+          return `<li class="record"><span class="record-key">${copy(key)}</span><span class="record-value"><strong>${copy(title)}</strong>${renderedDetail}${renderRefs(refs)}</span></li>`;
         }).join('')}</ul>`;
       }
 
       function renderRefs(refs = []) {
         if (!refs?.length) return '';
-        return `<div class="record-refs">Referencias: ${refs.map((ref) => `${copy(ref.type)} · ${escapeHtml(ref.id)}${ref.revisionId ? ` · revision ${escapeHtml(ref.revisionId)}` : ''}`).join(' · ')}</div>`;
+        return `<div class="record-refs">Referencias: ${refs.map((ref) => `${copy(ref.type)} · ${escapeHtml(ref.id)}${ref.revisionId ? ` · revisión ${escapeHtml(ref.revisionId)}` : ''}`).join(' · ')}</div>`;
       }
 
       function missionIdentity(mission) {

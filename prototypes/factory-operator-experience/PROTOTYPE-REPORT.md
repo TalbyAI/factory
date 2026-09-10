@@ -21,8 +21,7 @@ Un Workspace Inbox-first permite al Operator identificar la siguiente Mission qu
 - Timeline, Gates y Evidence muestran IDs estáticos y referencias de Run, Gate, Artifact, Dependency y Projection Drift, incluyendo evidencia de Gate versionada y Artifacts inmutables con revisión.
 - La barra presenta una acción recomendada simulada con autoridad explícita y controles secundarios etiquetados como inspecciones simuladas. `simulateAction()` sólo añade actividad local con el resultado `simulated — no external effect`.
 - La única carga de red declarada es el `fetch('/data.json')` inicial; ningún manejador de selección, tabs o acciones invoca endpoints.
-- Tras `bae0aa1`, el walkthrough en navegador confirmó el orden `mission-feature-gate`, `mission-bug-drift`, `mission-feature-implementation`, `mission-pr-review`, `mission-change-proposal`; las cinco pestañas tuvieron contenido, A1–A4 produjeron actividad simulada local y A5 permaneció deshabilitada por su Gate `Pending`.
-- Esta ronda ajusta la semántica del Gate de A2 y de la propuesta A4; no se repitió el walkthrough en navegador.
+- Tras `67458c4`, el walkthrough final en navegador cargó `policy.mjs`, mostró la composición, recorrió las cinco Missions en el orden `mission-feature-gate`, `mission-bug-drift`, `mission-feature-implementation`, `mission-pr-review`, `mission-change-proposal` y sus cinco pestañas, produjo actividad simulada local en A1–A4 y mantuvo A5 deshabilitada por su Gate `Pending`.
 - `npm run check`, `npm run self-check` y `git diff --check` finalizaron correctamente.
 
 ## Resultado

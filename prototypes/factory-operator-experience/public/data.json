@@ -62,7 +62,7 @@
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Autonomy Grant",
-      "frontier": { "status": "blocked", "reason": "La Mission Dependency dep-customer-export-fixtures está Blocked; no es eligible." },
+      "frontier": { "status": "blocked", "reason": "La Mission Dependency dep-customer-export-fixtures está Blocked; no es elegible." },
       "overview": "Implement saved customer export filters and verify them against export fixtures.",
       "timeline": [{
         "at": "2026-09-10T08:05:00Z",
