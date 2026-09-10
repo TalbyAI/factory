@@ -52,21 +52,69 @@ assert.equal(missionsById.get('mission-bug-drift').run.status, 'Failed');
 assert(typeof missionsById.get('mission-pr-review').run.id === 'string');
 assert(typeof missionsById.get('mission-bug-drift').run.id === 'string');
 
+function actionIsEnabled(mission) {
+  if (mission.nextActionSimulated !== true || mission.revisionValid !== true) return false;
+  if (mission.authority === 'Local inspection only') return true;
+  const approvingGate = mission.authority === 'Exact Operator approval'
+    && mission.nextAction === 'Approve the export scope gate';
+  return mission.gates.every((gate) => gate.status === 'Satisfied'
+    || (approvingGate && gate.kind === 'Human Gate' && gate.status === 'Pending'));
+}
+
+const reviewMission = missionsById.get('mission-pr-review');
+assert.equal(reviewMission.authority, 'Local inspection only');
+assert.equal(reviewMission.gates[0].status, 'Pending');
+assert.equal(actionIsEnabled(reviewMission), true);
+const driftMission = missionsById.get('mission-bug-drift');
+assert.equal(driftMission.authority, 'Exact Operator approval');
+assert.equal(driftMission.gates[0].status, 'Pending');
+assert.equal(actionIsEnabled(driftMission), false);
+
 const artifactIds = fixture.missions.flatMap((mission) => mission.artifacts.map((artifact) => artifact.id));
 assert.equal(new Set(artifactIds).size, artifactIds.length);
 assert(fixture.missions.every((mission) => mission.artifacts.every((artifact) => artifact.immutable === true
   && typeof artifact.revisionId === 'string')));
+
+function referenceTargets(mission) {
+  return new Map([
+    ['Run', mission.run ? [mission.run] : []],
+    ['Gate', mission.gates],
+    ['Artifact', mission.artifacts],
+    ['Dependency', mission.dependencies],
+    ['Drift', mission.drift],
+    ['Evidence', mission.evidence]
+  ].map(([type, records]) => [type, new Map(records.map((record) => [record.id, record]))]));
+}
+
+function assertReferences(mission, refs) {
+  const targets = referenceTargets(mission);
+  for (const ref of refs) {
+    const target = targets.get(ref.type)?.get(ref.id);
+    assert(target, `${mission.id}: missing ${ref.type} reference ${ref.id}`);
+    if (ref.type === 'Artifact') {
+      assert.equal(typeof ref.revisionId, 'string');
+      assert.equal(ref.revisionId, target.revisionId);
+    }
+  }
+}
 
 for (const mission of fixture.missions) {
   for (const gate of mission.gates) {
     assert(typeof gate.evidence?.evidenceId === 'string');
     assert(typeof gate.evidence?.revisionId === 'string');
     assert.equal(gate.evidence.appliesToRevision, mission.revisionId);
-    assert(mission.evidence.some((evidence) => evidence.id === gate.evidence.evidenceId));
+    const gateEvidence = mission.evidence.find((evidence) => evidence.id === gate.evidence.evidenceId);
+    assert(gateEvidence);
+    assert.equal(gate.evidence.revisionId, gateEvidence.revisionId);
   }
   for (const event of mission.timeline) {
     assert(event.refs?.length > 0);
     assert(event.refs.every((ref) => typeof ref.type === 'string' && typeof ref.id === 'string'));
+    assertReferences(mission, event.refs);
+  }
+  for (const evidence of mission.evidence) {
+    assert(evidence.refs?.length > 0);
+    assertReferences(mission, evidence.refs);
   }
 }
 

@@ -423,6 +423,7 @@
 
       function actionPolicy(mission) {
         const inspectionOnly = mission.authority === 'Local inspection only';
+        // Inspection only exposes pending evidence locally; it never bypasses a real effect.
         const approvingGate = mission.authority === 'Exact Operator approval'
           && mission.nextAction === 'Approve the export scope gate';
         const invalidGate = inspectionOnly ? null : mission.gates.find((gate) => gate.status !== 'Satisfied'
