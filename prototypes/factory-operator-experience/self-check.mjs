@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 
 const fixture = JSON.parse(await readFile(new URL('./public/data.json', import.meta.url)));
 assert.equal(fixture.missions.length, 5);
+assert(fixture.missions.every((mission) => mission.state === 'Open'));
+assert(fixture.missions.every((mission) => mission.nextActionSimulated === true));
 assert(fixture.missions.some((mission) => mission.gates.some((gate) => gate.status === 'Pending')));
 assert(fixture.missions.some((mission) => mission.situation === 'Running'));
 assert(fixture.missions.some((mission) => mission.situation === 'Ready'));
