@@ -67,15 +67,23 @@ async function approve(pool, res, runId, body) {
   try {
     await client.query('begin');
     inTransaction = true;
-    const { rows: [existingCommand] } = await client.query(
-      'select run_id from topology_factory.commands where idempotency_key = $1',
-      [body.idempotencyKey],
+    const command = await client.query(
+      `insert into topology_factory.commands (idempotency_key, run_id, command, accepted)
+       values ($1, $2, 'approve', true) on conflict (idempotency_key) do nothing
+       returning idempotency_key`,
+      [body.idempotencyKey, runId],
     );
-    if (existingCommand) {
+    if (!command.rowCount) {
+      const { rows: [existingCommand] } = await client.query(
+        'select run_id, command from topology_factory.commands where idempotency_key = $1',
+        [body.idempotencyKey],
+      );
       await client.query('rollback');
       inTransaction = false;
-      if (existingCommand.run_id !== runId) return json(res, 409, { error: 'Idempotency key belongs to another Run' });
-      return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+      if (existingCommand?.run_id === runId && existingCommand.command === 'approve') {
+        return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+      }
+      return json(res, 409, { error: 'Idempotency key belongs to another Run' });
     }
     const { rows: [mission] } = await client.query(
       'select gate from topology_factory.missions where run_id = $1 for update',
@@ -85,17 +93,6 @@ async function approve(pool, res, runId, body) {
       await client.query('rollback');
       inTransaction = false;
       return json(res, 409, { error: 'Gate is not pending' });
-    }
-    const command = await client.query(
-      `insert into topology_factory.commands (idempotency_key, run_id, command, accepted)
-       values ($1, $2, 'approve', true) on conflict (idempotency_key) do nothing
-       returning idempotency_key`,
-      [body.idempotencyKey, runId],
-    );
-    if (!command.rowCount) {
-      await client.query('rollback');
-      inTransaction = false;
-      return json(res, 409, { error: 'Command already handled' });
     }
     const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/resume`, {
       method: 'POST',
@@ -110,7 +107,7 @@ async function approve(pool, res, runId, body) {
     await client.query("update topology_factory.missions set gate = 'satisfied' where run_id = $1", [runId]);
     await client.query('commit');
     inTransaction = false;
-    return json(res, 202, { runId, accepted: true, gate: 'satisfied' });
+    return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
   } catch (error) {
     if (inTransaction) await client.query('rollback');
     throw error;
