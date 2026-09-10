@@ -1,14 +1,513 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Factory Operator Experience</title>
+    <link rel="icon" href="data:,">
+    <title>Factory · Operator Workspace</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08110f;
+        --panel: #101b18;
+        --panel-strong: #17241f;
+        --line: #2a3a34;
+        --text: #edf5f0;
+        --muted: #9caf9f;
+        --accent: #d7ff45;
+        --accent-ink: #172000;
+        --warning: #ffcc66;
+        --danger: #ff8c7a;
+        --info: #7ed7ff;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 80% 0%, rgba(104, 145, 87, .16), transparent 34rem),
+          var(--bg);
+        color: var(--text);
+      }
+
+      button { font: inherit; }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+
+      .app-header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1.5rem;
+        padding: 1.5rem clamp(1rem, 3vw, 2.5rem);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand { display: flex; align-items: center; gap: .8rem; }
+      .brand-mark { color: var(--accent); font-size: 1.5rem; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { margin-bottom: .15rem; font-size: clamp(1.25rem, 2vw, 1.65rem); }
+      h2 { margin-bottom: .35rem; font-size: clamp(1.45rem, 3vw, 2.1rem); letter-spacing: -.035em; }
+      h3 { margin-bottom: .9rem; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+      .eyebrow { margin: 0 0 .25rem; color: var(--muted); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; }
+      .prototype-mark { margin: 0; color: var(--accent); font: 700 .7rem/1.2 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(19rem, 29rem) minmax(0, 1fr);
+        min-height: calc(100vh - 92px);
+      }
+
+      #inbox {
+        border-right: 1px solid var(--line);
+        background: rgba(10, 20, 17, .8);
+      }
+
+      .pane-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 4.5rem;
+        padding: 1.1rem 1.25rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .pane-heading h2 { margin: 0; font-size: 1rem; letter-spacing: .02em; }
+      .count { color: var(--muted); font-size: .8rem; }
+      #mission-list { display: grid; }
+
+      .mission-row {
+        width: 100%;
+        padding: 1.15rem 1.25rem;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: background .15s ease, box-shadow .15s ease;
+      }
+
+      .mission-row:hover { background: var(--panel); }
+      .mission-row[aria-current="true"] {
+        background: var(--panel-strong);
+        box-shadow: inset 3px 0 var(--accent);
+      }
+
+      .row-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+      .rank { color: var(--accent); font: 700 .7rem/1 ui-monospace, monospace; }
+      .mission-row strong { display: block; margin: .4rem 0 .35rem; font-size: .98rem; }
+      .row-meta { color: var(--muted); font-size: .78rem; }
+      .situation { display: block; margin: .75rem 0; color: var(--text); font-size: .85rem; }
+      .badges { display: flex; flex-wrap: wrap; gap: .35rem; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 1.45rem;
+        padding: .22rem .48rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: .68rem;
+        white-space: nowrap;
+      }
+      .badge.warning { border-color: rgba(255, 204, 102, .45); color: var(--warning); }
+      .badge.danger { border-color: rgba(255, 140, 122, .45); color: var(--danger); }
+      .badge.info { border-color: rgba(126, 215, 255, .4); color: var(--info); }
+
+      #mission-detail { min-width: 0; padding: clamp(1.25rem, 3vw, 2.5rem); }
+      #mission-header { padding-bottom: 1.5rem; }
+      .header-meta { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+
+      #tabs {
+        display: flex;
+        gap: .25rem;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .tab {
+        padding: .8rem .9rem;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .tab:hover { color: var(--text); }
+      .tab[aria-selected="true"] { border-color: var(--accent); color: var(--text); }
+
+      #tab-content { min-height: 18rem; padding: 1.5rem 0 2rem; }
+      .summary { max-width: 64rem; color: #cad7cf; font-size: 1.02rem; line-height: 1.65; }
+      .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin-top: 1.5rem; }
+      .metric, .record, #activity-log {
+        border: 1px solid var(--line);
+        border-radius: .65rem;
+        background: rgba(16, 27, 24, .72);
+      }
+      .metric { min-height: 6.5rem; padding: 1rem; }
+      .metric span { display: block; margin-bottom: .6rem; color: var(--muted); font-size: .72rem; }
+      .metric strong { font-size: 1rem; }
+      .records { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+      .record { display: grid; grid-template-columns: minmax(8rem, .32fr) 1fr; gap: 1rem; padding: 1rem; }
+      .record-key { color: var(--muted); font-size: .78rem; }
+      .record-value { line-height: 1.5; }
+      .record-value strong { display: block; margin-bottom: .2rem; }
+      .empty { padding: 2rem; border: 1px dashed var(--line); border-radius: .65rem; color: var(--muted); text-align: center; }
+
+      #action-bar {
+        display: grid;
+        grid-template-columns: minmax(15rem, 1fr) auto;
+        gap: 1rem;
+        align-items: center;
+        padding: 1.1rem;
+        border: 1px solid var(--line);
+        border-radius: .75rem;
+        background: var(--panel-strong);
+      }
+      .action-copy p { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; }
+      .action-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
+      .action-button {
+        min-height: 2.5rem;
+        padding: .6rem .85rem;
+        border: 1px solid var(--line);
+        border-radius: .45rem;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .action-button:hover:not(:disabled) { border-color: var(--accent); }
+      .action-button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 750; }
+      .action-button:disabled { cursor: not-allowed; opacity: .45; }
+
+      .activity { margin-top: 1.5rem; }
+      #activity-log { min-height: 4.5rem; padding: .9rem 1rem; }
+      .activity-entry { display: grid; grid-template-columns: 5rem 1fr; gap: .75rem; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+      .activity-entry:last-child { border: 0; }
+      .activity-time { color: var(--muted); font: .72rem/1.5 ui-monospace, monospace; }
+      .activity-result { color: var(--accent); font-size: .76rem; }
+      .loading, .error { padding: 2rem; color: var(--muted); }
+      .error { color: var(--danger); }
+
+      @media (max-width: 780px) {
+        .app-header { align-items: flex-start; flex-direction: column; }
+        .workspace { display: block; }
+        #inbox { border-right: 0; border-bottom: 1px solid var(--line); }
+        #mission-list { grid-auto-flow: column; grid-auto-columns: minmax(17rem, 82vw); overflow-x: auto; }
+        .mission-row { border-right: 1px solid var(--line); }
+        #action-bar { grid-template-columns: 1fr; }
+        .action-controls { justify-content: flex-start; }
+        .record { grid-template-columns: 1fr; gap: .25rem; }
+      }
+    </style>
   </head>
   <body>
-    <main>
-      <h1>Factory Operator Experience</h1>
-      <p>Prototype shell. Fixture data is available at <a href="/data.json">/data.json</a>.</p>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◆</span>
+        <div>
+          <p class="eyebrow">Plano de control Factory</p>
+          <h1>Workspace del Operator</h1>
+        </div>
+      </div>
+      <p class="prototype-mark">PROTOTYPE — local memory only</p>
+    </header>
+
+    <main class="workspace">
+      <aside id="inbox" aria-label="Inbox de Missions">
+        <div class="pane-heading">
+          <h2>Inbox · Missions Open</h2>
+          <span id="mission-count" class="count"></span>
+        </div>
+        <div id="mission-list"><p class="loading">Cargando Missions…</p></div>
+      </aside>
+
+      <section id="mission-detail" aria-live="polite">
+        <header id="mission-header"></header>
+        <nav id="tabs" aria-label="Detalle de la Mission" role="tablist"></nav>
+        <section id="tab-content" role="tabpanel" tabindex="0"></section>
+        <section id="action-bar" aria-label="Acciones de la Mission"></section>
+        <section class="activity">
+          <h3>Actividad local</h3>
+          <div id="activity-log" aria-live="polite"></div>
+        </section>
+      </section>
     </main>
+
+    <script>
+      const state = { missions: [], selectedMissionId: '', tab: 'Overview', activity: [] };
+      const tabs = ['Overview', 'Timeline', 'Gates', 'Dependencies', 'Evidence'];
+      // El fixture conserva sus valores originales; sólo se traduce la presentación.
+      const spanishCopy = {
+        'Add customer export filters': 'Añadir filtros de exportación de clientes',
+        'Implement invoice reconciliation': 'Implementar la conciliación de facturas',
+        'Review payment retry changes': 'Revisar los cambios de reintentos de pago',
+        'Rotate staging credentials': 'Rotar las credenciales de preproducción',
+        'Fix duplicate webhook deliveries': 'Corregir las entregas duplicadas de webhooks',
+        'Waiting on Human Gate': 'En espera de Human Gate',
+        'Blocked dependency': 'Dependencia bloqueada',
+        'Approve the export scope gate': 'Aprobar el Gate de alcance de exportación',
+        'Unblock the invoice fixture dependency': 'Desbloquear la dependencia del fixture de facturas',
+        'Inspect the retry test evidence': 'Inspeccionar la evidencia de pruebas de reintentos',
+        'Start the change run': 'Iniciar la Run del cambio',
+        'Reconcile the failed run with the projection': 'Reconciliar la Run fallida con la External Projection',
+        'Add saved filters to customer exports without changing existing defaults.': 'Añadir filtros guardados a las exportaciones de clientes sin cambiar los valores predeterminados.',
+        'Implement reconciliation rules and verify them against invoice fixtures.': 'Implementar reglas de conciliación y verificarlas con fixtures de facturas.',
+        'Review the pull request that adjusts payment retry backoff.': 'Revisar el pull request que ajusta los intervalos de reintentos de pago.',
+        'Rotate staging credentials during the next approved maintenance window.': 'Rotar las credenciales de preproducción durante la próxima ventana de mantenimiento aprobada.',
+        'Prevent duplicate webhook deliveries after a worker restart.': 'Evitar entregas duplicadas de webhooks tras reiniciar un proceso de trabajo.',
+        'Human Gate requested': 'Human Gate solicitado',
+        'Scope approval is required before implementation.': 'Se requiere aprobar el alcance antes de la implementación.',
+        'Execution Frontier reached': 'Execution Frontier alcanzada',
+        'Rule validation is the next executable step.': 'La validación de reglas es el siguiente paso ejecutable.',
+        'Review started': 'Revisión iniciada',
+        'Automated checks are still running.': 'Las comprobaciones automáticas siguen en ejecución.',
+        'Proposal validated': 'Propuesta validada',
+        'All preflight evidence is available.': 'Toda la evidencia previa está disponible.',
+        'Run stalled': 'Run estancada',
+        'The worker failed before publishing the final artifact.': 'El proceso de trabajo falló antes de publicar el Artifact final.',
+        'Export scope': 'Alcance de exportación',
+        'Export contract': 'Contrato de exportación',
+        'Customer export request': 'Solicitud de exportación de clientes',
+        'Reconciliation review': 'Revisión de conciliación',
+        'Invoice fixtures': 'Fixtures de facturas',
+        'Reconciliation rule suite': 'Suite de reglas de conciliación',
+        'Review approval': 'Aprobación de revisión',
+        'Payment retry changes': 'Cambios de reintentos de pago',
+        'Checks running': 'Comprobaciones en ejecución',
+        'Maintenance window': 'Ventana de mantenimiento',
+        'Credential rotation runbook': 'Procedimiento de rotación de credenciales',
+        'Replay verification': 'Verificación de repetición',
+        'Worker restart reproduction': 'Reproducción del reinicio del proceso de trabajo',
+        'Duplicate delivery trace': 'Traza de entrega duplicada',
+        'Run failed but the projection still reports the artifact as published.': 'La Run falló, pero la External Projection aún indica que el Artifact está publicado.',
+        Product: 'Producto', Engineering: 'Ingeniería', Reviewer: 'Revisor', Operations: 'Operaciones'
+      };
+
+      function copy(value) {
+        return escapeHtml(spanishCopy[value] ?? value);
+      }
+
+      function attentionSort(left, right) {
+        return left.attentionRank - right.attentionRank || left.id.localeCompare(right.id);
+      }
+
+      function selectedMission() {
+        return state.missions.find((mission) => mission.id === state.selectedMissionId) ?? state.missions[0];
+      }
+
+      function render() {
+        renderInbox();
+        renderDetail();
+        renderActivity();
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, (character) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        })[character]);
+      }
+
+      function statusTone(value) {
+        if (/blocked|failed|denied|stalled|drift/i.test(value)) return 'danger';
+        if (/pending|waiting/i.test(value)) return 'warning';
+        return 'info';
+      }
+
+      function badge(value) {
+        return `<span class="badge ${statusTone(value)}">${escapeHtml(value)}</span>`;
+      }
+
+      function renderInbox() {
+        const missions = state.missions.filter((mission) => mission.state === 'Open').sort(attentionSort);
+        document.querySelector('#mission-count').textContent = `${missions.length} activas`;
+        document.querySelector('#mission-list').innerHTML = missions.map((mission) => {
+          const gateBadges = mission.gates.map((gate) => `Gate · ${gate.status}`);
+          const driftBadge = mission.drift.length ? [`Drift · ${mission.drift.length}`] : ['Drift · 0'];
+          const allBadges = [`Run · ${mission.run?.status ?? 'None'}`, ...gateBadges, ...driftBadge];
+          return `
+            <button class="mission-row" type="button" data-mission-id="${escapeHtml(mission.id)}" aria-current="${mission.id === selectedMission()?.id}">
+              <span class="row-top"><span class="row-meta">${escapeHtml(mission.workType)}</span><span class="rank">A${mission.attentionRank}</span></span>
+              <strong>${copy(mission.title)}</strong>
+              <span class="row-meta">Estado canónico · ${escapeHtml(mission.state)}</span>
+              <span class="situation">${copy(mission.situation)}</span>
+              <span class="badges">${allBadges.map(badge).join('')}</span>
+            </button>`;
+        }).join('');
+      }
+
+      function renderDetail() {
+        const mission = selectedMission();
+        if (!mission) return;
+
+        document.querySelector('#mission-header').innerHTML = `
+          <p class="eyebrow">Mission · ${escapeHtml(mission.id)}</p>
+          <h2>${copy(mission.title)}</h2>
+          <div class="header-meta">
+            ${badge(mission.state)}
+            ${badge(mission.workType)}
+            ${badge(spanishCopy[mission.situation] ?? mission.situation)}
+          </div>`;
+
+        document.querySelector('#tabs').innerHTML = tabs.map((tab) => `
+          <button id="tab-${tab}" class="tab" type="button" role="tab" data-tab="${tab}" aria-controls="tab-content" tabindex="${state.tab === tab ? 0 : -1}" aria-selected="${state.tab === tab}">${tab}</button>
+        `).join('');
+        document.querySelector('#tab-content').setAttribute('aria-labelledby', `tab-${state.tab}`);
+        document.querySelector('#tab-content').innerHTML = renderTab(mission);
+        document.querySelector('#action-bar').innerHTML = renderActions(mission);
+      }
+
+      function renderTab(mission) {
+        if (state.tab === 'Overview') return renderOverview(mission);
+        const renderers = {
+          Timeline: (record) => [formatDate(record.at), record.label, record.detail],
+          Gates: (record) => [record.id, record.name, `${record.status} · Responsable: ${spanishCopy[record.owner] ?? record.owner}`],
+          Dependencies: (record) => [record.id, record.name, record.status],
+          Evidence: (record) => [record.kind, record.label, record.status]
+        };
+        const records = mission[state.tab.toLowerCase()];
+        if (!records.length) return `<div class="empty">No hay registros de ${state.tab} para esta Mission.</div>`;
+        return `<ul class="records">${records.map((record) => {
+          const [key, title, detail] = renderers[state.tab](record);
+          return `<li class="record"><span class="record-key">${copy(key)}</span><span class="record-value"><strong>${copy(title)}</strong>${copy(detail)}</span></li>`;
+        }).join('')}</ul>`;
+      }
+
+      function renderOverview(mission) {
+        const gateCounts = mission.gates.reduce((counts, gate) => {
+          counts[gate.status] = (counts[gate.status] ?? 0) + 1;
+          return counts;
+        }, {});
+        const gateSummary = Object.entries(gateCounts).map(([status, count]) => `${status}: ${count}`).join(' · ') || '0';
+        const metrics = [
+          ['Situación operativa', mission.situation],
+          ['Run', `${mission.run?.status ?? 'None'} · ${mission.run?.attention ?? 'sin atención'}`],
+          ['Execution Frontier', mission.badges.includes('Execution Frontier') ? 'Dentro' : 'Fuera'],
+          ['Missions hijas / dependencias', `${mission.children?.length ?? 0} / ${mission.dependencies.length}`],
+          ['Gates', gateSummary],
+          ['Artifacts', String(mission.evidence.length)],
+          ['Projection Drift', mission.drift.length ? `${mission.drift.length} detectado` : 'Sin drift']
+        ];
+        const drift = mission.drift.map((record) => `
+          <li class="record">
+            <span class="record-key">${escapeHtml(record.kind)} · ${escapeHtml(record.source)}</span>
+            <span class="record-value"><strong>Projection Drift</strong>${copy(record.detail)}</span>
+          </li>`).join('');
+        return `
+          <p class="summary">${copy(mission.overview)}</p>
+          <div class="metrics">${metrics.map(([label, value]) => `<div class="metric"><span>${copy(label)}</span><strong>${copy(value)}</strong></div>`).join('')}</div>
+          ${drift ? `<h3>Detalle de Projection Drift</h3><ul class="records">${drift}</ul>` : ''}`;
+      }
+
+      function actionPolicy(mission) {
+        const inspectionOnly = mission.nextAction === 'Inspect the retry test evidence';
+        const approvingGate = mission.nextAction === 'Approve the export scope gate';
+        // ponytail: Ready es la disponibilidad sembrada; una integración real exige evaluaciones Satisfied versionadas.
+        const invalidGate = mission.gates.find((gate) => !['Satisfied', 'Ready'].includes(gate.status)
+          && !(approvingGate && gate.status === 'Pending'));
+        const invalidRevision = mission.revisionValid === false;
+        const reason = mission.nextActionSimulated !== true ? 'La acción no está marcada como simulada'
+          : inspectionOnly ? '' : invalidRevision ? 'Revisión no vigente'
+          : invalidGate ? `Gate no válido: ${spanishCopy[invalidGate.name] ?? invalidGate.name} (${invalidGate.status})` : '';
+        return {
+          disabled: Boolean(reason),
+          authority: inspectionOnly ? 'Ninguna — inspección local' : 'Autonomy Grant o aprobación exacta del Operator',
+          reason
+        };
+      }
+
+      function renderActions(mission) {
+        const policy = actionPolicy(mission);
+        const inspectionTabs = [
+          mission.gates.length && 'Gates',
+          mission.dependencies.length && 'Dependencies',
+          mission.evidence.length && 'Evidence'
+        ].filter(Boolean);
+        return `
+          <div class="action-copy">
+            <p class="eyebrow">Acción recomendada · PROTOTYPE — local memory only</p>
+            <strong>${copy(mission.nextAction)}</strong>
+            <p>Autoridad requerida: ${escapeHtml(policy.authority)}${policy.reason ? ` · ${escapeHtml(policy.reason)}` : ''}</p>
+          </div>
+          <div class="action-controls">
+            ${inspectionTabs.map((tab) => `<button class="action-button" type="button" data-tab="${tab}">Ver ${tab}</button>`).join('')}
+            <button class="action-button primary" type="button" data-action="${escapeHtml(mission.nextAction)}" ${policy.disabled ? 'disabled' : ''}>Simular acción</button>
+          </div>`;
+      }
+
+      function simulateAction(action) {
+        const mission = selectedMission();
+        if (!mission || action !== mission.nextAction || actionPolicy(mission).disabled) return;
+        state.activity.unshift({
+          at: new Date().toLocaleTimeString('es-ES'),
+          missionId: selectedMission().id,
+          action,
+          result: 'simulated — no external effect'
+        });
+        renderActivity();
+      }
+
+      function renderActivity() {
+        const log = document.querySelector('#activity-log');
+        if (!state.activity.length) {
+          log.innerHTML = '<div class="empty">Sin actividad. Las acciones aparecerán aquí y nunca saldrán del navegador.</div>';
+          return;
+        }
+        log.innerHTML = state.activity.map((entry) => `
+          <div class="activity-entry">
+            <span class="activity-time">${escapeHtml(entry.at)}</span>
+            <span><strong>${copy(entry.action)}</strong><br><span class="record-key">${escapeHtml(entry.missionId)}</span><br><span class="activity-result">${escapeHtml(entry.result)} · simulado, sin efecto externo</span></span>
+          </div>`).join('');
+      }
+
+      function formatDate(value) {
+        return new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(value));
+      }
+
+      document.addEventListener('click', (event) => {
+        const missionButton = event.target.closest('[data-mission-id]');
+        if (missionButton) {
+          state.selectedMissionId = missionButton.dataset.missionId;
+          render();
+          document.querySelector(`[data-mission-id="${state.selectedMissionId}"]`).focus();
+          return;
+        }
+        const tabButton = event.target.closest('[data-tab]');
+        if (tabButton) {
+          state.tab = tabButton.dataset.tab;
+          renderDetail();
+          document.querySelector(`#tab-${state.tab}`).focus();
+          return;
+        }
+        const actionButton = event.target.closest('[data-action]');
+        if (actionButton) simulateAction(actionButton.dataset.action);
+      });
+
+      document.querySelector('#tabs').addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const index = tabs.indexOf(state.tab);
+        state.tab = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1)
+          : tabs[(index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+        renderDetail();
+        document.querySelector(`#tab-${state.tab}`).focus();
+      });
+
+      fetch('/data.json')
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then(({ missions }) => {
+          state.missions = missions;
+          state.selectedMissionId = [...missions].sort(attentionSort)[0]?.id ?? '';
+          render();
+        })
+        .catch((error) => {
+          document.querySelector('#mission-list').innerHTML = `<p class="error">No se pudo cargar el fixture: ${escapeHtml(error.message)}</p>`;
+        });
+    </script>
   </body>
 </html>
