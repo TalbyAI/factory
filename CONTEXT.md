@@ -98,7 +98,7 @@ Histórico append-only de las Assertions emitidas sobre una Mission. Su vista ef
 _Avoid_: Mutable state, fact store
 
 **Audit Event**:
-Registro inmutable de toda solicitud, autorización o rechazo, transición, evaluación, efecto e intento de ejecución de una Mission. Incluye replays o conflictos de idempotencia, retries, recuperación, cancelación, webhooks, reconciliación y drift cuando formen parte de esa historia. Conserva actor, causa, secuencia y resultado para explicar cómo ocurrió, pero no sustituye el estado semántico del Mission Graph ni puede cambiarlo por sí solo. Su política de conservación v1 está definida en la [política de observabilidad](docs/init/PROJECT_APPROACH.md#observability-retention-policy-v1).
+Registro inmutable de toda solicitud, autorización o rechazo, transición, evaluación, efecto e intento de ejecución de una Mission. Incluye replays o conflictos de idempotencia, retries, recuperación, cancelación, webhooks, reconciliación y drift cuando formen parte de esa historia. Las solicitudes sin Mission admitida conservan su propio identificador y reloj de recepción. Conserva actor, causa, secuencia y resultado para explicar cómo ocurrió, pero no sustituye el estado semántico del Mission Graph ni puede cambiarlo por sí solo. Su política de conservación v1 está definida en la [política de observabilidad](docs/init/PROJECT_APPROACH.md#observability-retention-policy-v1).
 _Avoid_: Log, telemetry, mutable audit row
 
 **Operational Telemetry**:

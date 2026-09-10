@@ -127,10 +127,40 @@ La primera versión local-first usa esta política base, ampliable por el Operat
 
 | Registro | Conservación | Pérdida o muestreo permitido |
 |---|---|---|
-| Audit Event (`run_events`) | Desde la admisión de la Mission hasta 90 días después de su transición terminal; una Mission no terminal se conserva indefinidamente. | Ninguna pérdida ni muestreo. Incluye solicitudes aceptadas, rechazadas, replays o conflictos de idempotencia, autorizaciones, transiciones de Mission/Run/Gate, evaluaciones y consumos de Gates, reservas y resultados de efectos, intentos/retries/recuperaciones/cancelaciones, y webhooks, reconciliación y drift. |
+| Audit Event (`run_events`) | Las solicitudes tienen un reloj propio desde `receivedAt`: si no se admite una Mission, se conservan hasta 90 días después de la recepción o de la decisión final, lo que ocurra más tarde; si se admite, pasan al reloj de la Mission. Las Missions admitidas se conservan hasta 90 días después de su transición terminal; una Mission no terminal se conserva indefinidamente. | Ninguna pérdida ni muestreo. Incluye solicitudes aceptadas, rechazadas, replays o conflictos de idempotencia, autorizaciones, transiciones de Mission/Run/Gate, evaluaciones y consumos de Gates, reservas y resultados de efectos, intentos/retries/recuperaciones/cancelaciones, y webhooks, reconciliación y drift. |
 | Operational Telemetry | Logs y traces: 30 días. Métricas agregadas: 90 días. | Es best-effort: se permite pérdida del exporter y muestreo de traces ordinarios. El perfil del tracer bullet no aplica muestreo; las transiciones terminales, errores, acciones privilegiadas y efectos externos se seleccionan siempre para captura sin muestreo cuando la fuente está disponible. Nunca es necesaria para evaluar el estado o el Completion Contract. |
 | Usage and Cost Record | Desde el inicio de la Run hasta 90 días después de la transición terminal de su Mission; una Mission no terminal se conserva indefinidamente. | Ninguna pérdida ni muestreo de registros por llamada o paso. Los agregados pueden recalcularse o perder resolución; `unknown` nunca se convierte en cero. |
 | Evidence | Mientras la Mission esté abierta y durante 90 días después de su transición terminal. Un Artifact referenciado por un Completion Contract satisfecho se conserva indefinidamente. | Ninguna pérdida, muestreo ni borrado mientras sea necesario para un Gate o Completion Contract; conserva hash, tipo y validador. |
+
+#### Langfuse data boundary
+
+Langfuse es un proveedor opcional y nunca una fuente autoritativa. La clasificación depende del uso del dato, no del despliegue: las mismas reglas se aplican a Langfuse Cloud y self-hosted. Cloud sólo se habilita con una configuración verificable de retención y borrado; self-hosted aplica los mismos plazos a su base de datos y copias de respaldo. Si un despliegue no puede cumplirlos, no recibe prompts, datasets ni evaluaciones.
+
+| Dato en Langfuse | Clasificación en Factory | Conservación, borrado y muestreo |
+|---|---|---|
+| Traces, spans y métricas | Operational Telemetry | Logs/traces 30 días y métricas 90 días; borrado al vencer, pérdida del exporter y muestreo de traces ordinarios permitidos. Errores, acciones privilegiadas, efectos externos y transiciones terminales no se muestrean cuando la fuente está disponible. |
+| Tokens y costes | Copia no autoritativa de Usage and Cost Record | El registro canónico de Factory conserva 90 días sin pérdida ni muestreo; la copia de Langfuse se borra a los 30 días, puede perderse o muestrearse y nunca gobierna presupuestos ni Completion Contracts. |
+| Prompts, datasets y evaluaciones | Evidence sólo tras promoverlos a un Artifact de Factory referenciado por un Gate o Completion Contract | No se exportan por defecto. Una copia usada sólo para diagnóstico se borra a los 30 días y no prueba aceptación; si se promueve a Evidence, el Artifact de Factory conserva hash, tipo y validador, y sigue la retención de Evidence. |
+
+### run_events atomicity and recovery contract
+
+`run_events` conserva la historia de auditoría, pero no sustituye la autoridad semántica del Mission Graph ni la autoridad del registro durable de efectos externos.
+
+- Una mutación del Mission Graph, su Audit Event, la revisión esperada y la deduplicación de la solicitud se confirman en una única transacción PostgreSQL. Si falla el commit, no queda visible ni la mutación ni su evento.
+- Antes de invocar un efecto externo, Factory confirma un Effect Record durable con una idempotency key estable para la intención, la Run y el destino. La reserva, el intento y el resultado se auditan; el proveedor no se incluye en la transacción PostgreSQL.
+- Un crash después del efecto y antes de registrar su resultado deja el Effect Record en `pending` o `unknown`. Recovery y reconciliación consultan al proveedor cuando es posible y reusan la misma key; retries, replays y webhooks duplicados no crean otra key ni otro efecto efectivo. Si el proveedor no permite idempotencia o consulta, el resultado permanece `unknown` y no satisface un Gate.
+- La Run conserva su identidad a través de retries y recuperación; el presupuesto durable de intentos y los locks de recuperación pertenecen a Factory. El diseño no promete exactly-once para un proveedor externo no idempotente.
+
+La evidencia ejecutable ya existente para este contrato está en [`mastra-postgres-recovery`](../../prototypes/mastra-postgres-recovery/PROTOTYPE-REPORT.md) y su [`harness.mjs`](../../prototypes/mastra-postgres-recovery/src/harness.mjs) —SIGKILL después del efecto, retry budget y recuperación concurrente—, y en [`tanstack-copilotkit-mastra-topology`](../../prototypes/tanstack-copilotkit-mastra-topology/PROTOTYPE-REPORT.md) y su [`self-check.mjs`](../../prototypes/tanstack-copilotkit-mastra-topology/src/self-check.mjs) —aprobación duplicada, reserva pendiente y recuperación con un solo efecto—. El tracer bullet debe repetir estos checks antes de declarar válida una implementación; el runtime de Factory todavía no existe para añadirle tests de producto.
+
+### Capacity and archival guardrails
+
+La retención indefinida exige capacidad explícita antes de adoptar PostgreSQL como stack v1:
+
+- `run_events` y Usage and Cost Records se particionan por mes de registro; las Missions activas conservan acceso caliente a su estado y a sus índices.
+- Los datos que superen la ventana caliente se copian a un archivo durable direccionado por contenido, inicialmente en el almacenamiento local respaldado y después en almacenamiento S3-compatible, con manifiesto, hashes y límites de secuencia. El archivo conserva autoridad sobre el histórico; no se elimina la copia caliente hasta verificar restauración, hashes y continuidad de secuencias.
+- Alertas de capacidad se emiten por defecto al 70%, 85% y 95% de ocupación, con umbrales configurables. En critical se bloquean nuevas Runs y efectos, pero se preservan cancelaciones, recuperación y toda escritura autoritativa posible; nunca se libera espacio borrando Audit Events o Evidence.
+- La comprobación de restore valida conjuntamente los schemas de Factory y Mastra, continuidad del Mission Graph y `run_events`, unicidad de idempotency keys/effects, hashes de Artifacts y una muestra de Completion Contracts terminales. PostgreSQL y `run_events` sólo siguen siendo el stack v1 si estos checks de capacidad y restore pasan; si fallan, se difiere la retención indefinida o se cambia el almacén.
 
 ### Stack recomendado
 
@@ -143,7 +173,7 @@ La primera versión local-first usa esta política base, ampliable por el Operat
 - Runner inicial: adapter directo a Codex/Claude o ACP; [Sandcastle](https://github.com/mattpocock/sandcastle), OpenHands SDK y OpenAI Agents SDK son alternativas para comparar ciclo de sesión, commits, resume y outputs tipados.
 - MCP para herramientas que el modelo pueda invocar. No usaría MCP como sustituto de webhooks/APIs deterministas del control plane.
 - AG-UI para streaming agente–frontend; A2A solo cuando realmente tengas agentes externos independientes.
-- Observabilidad: OTel para operación, `run_events` para auditoría y Langfuse como provider de traces LLM/evals. El spike debe comprobar que cambiar backend de observabilidad no cambia el dominio ni el audit log; la política de conservación está en [Observability retention policy (v1)](#observability-retention-policy-v1).
+- Observabilidad: OTel para Operational Telemetry, `run_events` para Audit Events y Langfuse como provider opcional de traces/evaluaciones bajo [Langfuse data boundary](#langfuse-data-boundary). El spike debe comprobar que cambiar backend de observabilidad no cambia el dominio ni el audit log; la política de conservación está en [Observability retention policy (v1)](#observability-retention-policy-v1).
 
 #### Technical spike: Mastra framework vs Microsoft Agent Framework
 
