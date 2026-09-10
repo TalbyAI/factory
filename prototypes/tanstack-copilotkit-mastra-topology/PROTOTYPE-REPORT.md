@@ -2,9 +2,9 @@
 
 ## Verdict
 
-**Validated** on executable commit `228e252526c9138ea630098228c00cb40a6fed0c`
-(the current code HEAD before this evidence-only update; it contains
-`e8f618b`). The full assert-based check completed with exit 0 on 2026-09-10.
+**Validated** on executable commit
+`e6b4d8578a1245d36bdfabc0b8de823dcd3a270b`. The full assert-based check
+completed with exit 0 on 2026-09-10.
 
 The command emits only its npm banner plus Compose readiness. The scenario
 results below are assertions that completed in that run; no event identifiers
@@ -53,7 +53,6 @@ output was:
  Container tanstack-copilotkit-mastra-topology-postgres-1 Running
  Container tanstack-copilotkit-mastra-topology-postgres-1 Waiting
  Container tanstack-copilotkit-mastra-topology-postgres-1 Healthy
-self-check-exit=0
 ```
 
 ## Scenario evidence
@@ -63,6 +62,7 @@ self-check-exit=0
 | Malformed input and invalid cursors | Passed | `null` and `{` to Mastra start/resume and BFF approval returned 400; `after=2147483648` returned 400 for BFF and Mastra. Both `/health` endpoints remained 200. |
 | Happy path and operator authorization | Passed | The Run suspended and completed with its original `runId`; approval returned 200; scratch effects count was 1. Missing operator key returned 401. |
 | Duplicate approval | Passed | Repeating `approve-1` returned 200 without increasing the scratch effects count above 1; a different stale key returned 409. |
+| Effect committed, no successful finish, running snapshot recovery | Passed | A real suspended Mastra snapshot was marked `running` in the disposable store after inserting its idempotent effect; no `workflow.completed` event existed before recovery. BFF approval used Mastra `workflow.getWorkflowRunById()` plus `run.restart()`, the step observed the existing effect and returned success, one successful durable `workflow-finish` was forwarded, Gate became `satisfied`, and the effect count stayed 1. |
 | Failed workflow/effect recovery without satisfying the Gate | Passed | A seeded effect plus durable `workflow-finish` with `failed` status produced a non-200 recovery response; command count remained 1 and unaccepted, Gate remained `pending`, and Mission status became `failed`. The terminal SSE response completed within 2 seconds. |
 | Pending reservation retry | Passed | A preseeded unaccepted reservation survived a BFF restart; retrying its same key returned 200, then one command and one effect existed for that Run. |
 | 10 simultaneous same-key approvals | Passed | All 10 responses were 200 within the 5-second deadlock bound; the Run completed with exactly one command and one effect. |
@@ -123,6 +123,9 @@ pending, and shutdown with an open SSE all passed.
   compromised-host security test was run.
 - The effect is one local idempotent PostgreSQL row; this does not establish
   exactly-once external effects or token-perfect AG-UI replay.
+- The running-snapshot recovery scenario changes only the status field of a
+  real suspended snapshot in the disposable Mastra store to model the crash
+  window; it does not simulate a process kill at an instruction boundary.
 - Cleanup is deliberately scratch-only and refuses a database other than
   `topology_prototype`; `docker compose down -v` permanently deletes its
   prototype volume.
