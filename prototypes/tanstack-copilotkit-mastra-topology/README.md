@@ -6,8 +6,12 @@ workflow state, SSE replay, and operator approval.
 From this directory, start it with one command:
 
 ```sh
-docker compose up -d postgres && npm run prototype
+npm ci && docker compose up -d postgres && npm run self-check && npm run prototype
 ```
+
+On a clean checkout, `self-check` runs before leaving the supervisor running
+on first startup: it bootstraps and verifies only the scratch database,
+including the `topology_factory` and `topology_mastra` schemas.
 
 Open [http://127.0.0.1:4310](http://127.0.0.1:4310). The supervisor control
 API listens on `http://127.0.0.1:4312`.
