@@ -113,24 +113,37 @@ GitHub / ADO / Linear       Slack / Teams       Notion / AFFiNE
 | Intención y aceptación                   | Tracker o documento original                                   |
 | Especificación usada por una ejecución   | Snapshot inmutable con hash                                    |
 | Código                                   | Git                                                            |
-| Estado de runs, pasos y aprobaciones     | PostgreSQL de la factory                                       |
-| Logs, spans, tokens y latencia           | OpenTelemetry                                                  |
+| Estado semántico de Missions, Runs y Gates | Mission Graph en PostgreSQL de la factory                     |
+| Solicitudes, autorizaciones, transiciones, efectos e intentos | `run_events` append-only en PostgreSQL de la factory |
+| Logs, spans y latencia                    | OpenTelemetry                                                  |
+| Tokens consumidos, uso y coste            | Usage and Cost Records en PostgreSQL; OTel sólo como métrica derivada |
 | Vídeos, diffs, reports y outputs pesados | Disco local inicialmente; almacenamiento S3-compatible después |
 
 No intentaría sincronizar todo bidireccionalmente. La factory guarda proyecciones y enlaces; el sistema originario conserva su autoridad.
+
+### Observability retention policy (v1)
+
+La primera versión local-first usa esta política base, ampliable por el Operator pero no reducible para los registros autoritativos o la Evidence. Los plazos son de conservación operativa, no una garantía legal ni un compromiso de cumplimiento normativo.
+
+| Registro | Conservación | Pérdida o muestreo permitido |
+|---|---|---|
+| Audit Event (`run_events`) | Desde la admisión de la Mission hasta 90 días después de su transición terminal; una Mission no terminal se conserva indefinidamente. | Ninguna pérdida ni muestreo. Incluye solicitudes aceptadas, rechazadas, replays o conflictos de idempotencia, autorizaciones, transiciones de Mission/Run/Gate, evaluaciones y consumos de Gates, reservas y resultados de efectos, intentos/retries/recuperaciones/cancelaciones, y webhooks, reconciliación y drift. |
+| Operational Telemetry | Logs y traces: 30 días. Métricas agregadas: 90 días. | Es best-effort: se permite pérdida del exporter y muestreo de traces ordinarios. El perfil del tracer bullet no aplica muestreo; las transiciones terminales, errores, acciones privilegiadas y efectos externos se seleccionan siempre para captura sin muestreo cuando la fuente está disponible. Nunca es necesaria para evaluar el estado o el Completion Contract. |
+| Usage and Cost Record | Desde el inicio de la Run hasta 90 días después de la transición terminal de su Mission; una Mission no terminal se conserva indefinidamente. | Ninguna pérdida ni muestreo de registros por llamada o paso. Los agregados pueden recalcularse o perder resolución; `unknown` nunca se convierte en cero. |
+| Evidence | Mientras la Mission esté abierta y durante 90 días después de su transición terminal. Un Artifact referenciado por un Completion Contract satisfecho se conserva indefinidamente. | Ninguna pérdida, muestreo ni borrado mientras sea necesario para un Gate o Completion Contract; conserva hash, tipo y validador. |
 
 ### Stack recomendado
 
 - ASP.NET Core como modular monolith. Encaja con Teams, Azure DevOps, procesos en background, SignalR/OpenTelemetry y tu experiencia.
 - React/TypeScript para dashboard, inbox, editor de workflow y vistas de ejecución.
-- PostgreSQL con tablas normales y un `run_events` append-only para auditoría. No hace falta event sourcing completo.
+- PostgreSQL con tablas normales y un `run_events` append-only para Audit Events. No hace falta event sourcing completo.
 - Microsoft Agent Framework para agentes y grafos, aprovechando workflows, checkpointing y human-in-the-loop ya disponibles en [.NET](https://github.com/microsoft/agent-framework).
 - Un workflow explícito y persistido al principio. Si necesitas ejecuciones de semanas, upgrades sin interrupción o decenas de workers, [Temporal](https://docs.temporal.io/) es la alternativa más sólida, aunque añade infraestructura.
 - [ACP](https://github.com/agentclientprotocol) para controlar coding agents compatibles; adaptadores nativos cuando un harness ofrezca una API mejor.
 - Runner inicial: adapter directo a Codex/Claude o ACP; [Sandcastle](https://github.com/mattpocock/sandcastle), OpenHands SDK y OpenAI Agents SDK son alternativas para comparar ciclo de sesión, commits, resume y outputs tipados.
 - MCP para herramientas que el modelo pueda invocar. No usaría MCP como sustituto de webhooks/APIs deterministas del control plane.
 - AG-UI para streaming agente–frontend; A2A solo cuando realmente tengas agentes externos independientes.
-- Observabilidad: OTel para operación, `run_events` para auditoría y Langfuse como provider de traces LLM/evals. El spike debe comprobar que cambiar backend de observabilidad no cambia el dominio ni el audit log.
+- Observabilidad: OTel para operación, `run_events` para auditoría y Langfuse como provider de traces LLM/evals. El spike debe comprobar que cambiar backend de observabilidad no cambia el dominio ni el audit log; la política de conservación está en [Observability retention policy (v1)](#observability-retention-policy-v1).
 
 #### Technical spike: Mastra framework vs Microsoft Agent Framework
 

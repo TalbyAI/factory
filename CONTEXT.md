@@ -98,19 +98,19 @@ Histórico append-only de las Assertions emitidas sobre una Mission. Su vista ef
 _Avoid_: Mutable state, fact store
 
 **Audit Event**:
-Registro inmutable de una solicitud, autorización, transición, evaluación, efecto o intento relevante de una Mission. Conserva actor, causa, secuencia y resultado para explicar cómo ocurrió, pero no sustituye el estado semántico del Mission Graph ni puede cambiarlo por sí solo.
+Registro inmutable de toda solicitud, autorización o rechazo, transición, evaluación, efecto e intento de ejecución de una Mission. Incluye replays o conflictos de idempotencia, retries, recuperación, cancelación, webhooks, reconciliación y drift cuando formen parte de esa historia. Conserva actor, causa, secuencia y resultado para explicar cómo ocurrió, pero no sustituye el estado semántico del Mission Graph ni puede cambiarlo por sí solo. Su política de conservación v1 está definida en la [política de observabilidad](docs/init/PROJECT_APPROACH.md#observability-retention-policy-v1).
 _Avoid_: Log, telemetry, mutable audit row
 
 **Operational Telemetry**:
-Observaciones estructuradas —logs, traces y métricas— destinadas al diagnóstico operativo y la medición agregada. No es autoritativa para el estado, la autorización ni la satisfacción de un Completion Contract; su muestreo o pérdida no cambia una Mission.
+Observaciones estructuradas —logs, traces y métricas— destinadas al diagnóstico operativo y la medición agregada. No es autoritativa para el estado, la autorización ni la satisfacción de un Completion Contract; su muestreo o pérdida no cambia una Mission. Su conservación y pérdida permitida siguen la [política de observabilidad](docs/init/PROJECT_APPROACH.md#observability-retention-policy-v1).
 _Avoid_: Audit Event, evidence
 
 **Usage and Cost Record**:
-Registro inmutable del consumo observable de una Run o acción —llamadas, tokens disponibles, duración y coste exacto o estimado— que conserva `unknown` cuando el proveedor no permite determinar un valor. Permite gobernar presupuestos y medir resultados, pero no prueba por sí solo la satisfacción de un Completion Contract.
+Registro inmutable del consumo observable de una Run o acción —llamadas, tokens consumidos, duración y coste exacto o estimado— que conserva `unknown` cuando el proveedor no permite determinar un valor. Permite gobernar presupuestos y medir resultados, pero no prueba por sí solo la satisfacción de un Completion Contract. Su conservación y la de sus agregados siguen la [política de observabilidad](docs/init/PROJECT_APPROACH.md#observability-retention-policy-v1).
 _Avoid_: Billing record, success metric
 
 **Evidence**:
-Artifact u observación externa referenciada explícitamente por un Gate o Completion Contract para justificar una decisión o aceptación. La Operational Telemetry no constituye Evidence por sí sola.
+Artifact u observación externa referenciada explícitamente por un Gate o Completion Contract para justificar una decisión o aceptación. La Operational Telemetry no constituye Evidence por sí sola. Los Artifacts referenciados se conservan según la [política de observabilidad](docs/init/PROJECT_APPROACH.md#observability-retention-policy-v1).
 _Avoid_: Raw log, proof by metric
 
 **Retraction**:
