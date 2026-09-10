@@ -30,9 +30,9 @@ const attentionOrder = [...fixture.missions]
 assert.deepEqual(attentionOrder, [
   'mission-feature-gate',
   'mission-bug-drift',
+  'mission-change-proposal',
   'mission-feature-implementation',
-  'mission-pr-review',
-  'mission-change-proposal'
+  'mission-pr-review'
 ]);
 
 assert.deepEqual(missionsById.get('mission-feature-gate').children, ['mission-feature-implementation']);
@@ -59,6 +59,10 @@ assert.equal(missionsById.get('mission-feature-gate').run, null);
 assert.equal(missionsById.get('mission-change-proposal').run, null);
 assert.equal(missionsById.get('mission-pr-review').run.status, 'Running');
 assert.equal(missionsById.get('mission-bug-drift').run.status, 'Failed');
+assert.equal(missionsById.get('mission-bug-drift').situation, 'Waiting');
+assert.equal(missionsById.get('mission-bug-drift').run.attention, 'failed/intervention');
+assert.equal(missionsById.get('mission-bug-drift').badges[0], 'Failed Run intervention');
+assert.equal(missionsById.get('mission-bug-drift').timeline[0].label, 'Failed Run intervention');
 assert(typeof missionsById.get('mission-pr-review').run.id === 'string');
 assert(typeof missionsById.get('mission-bug-drift').run.id === 'string');
 
@@ -149,6 +153,6 @@ for (const [missionId, requiredTypes] of [
 assert(fixture.missions.some((mission) => mission.gates.some((gate) => gate.status === 'Pending')));
 assert(fixture.missions.some((mission) => mission.situation === 'Running'));
 assert(fixture.missions.some((mission) => mission.situation === 'Ready'));
-assert(fixture.missions.some((mission) => mission.run?.attention === 'stalled'));
+assert(fixture.missions.some((mission) => mission.run?.attention === 'failed/intervention'));
 assert(fixture.missions.some((mission) => mission.drift.length > 0));
 console.log('fixture self-check: PASS');
