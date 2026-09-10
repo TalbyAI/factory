@@ -31,7 +31,7 @@ function cursor(url) {
 }
 
 function terminal(chunk) {
-  return chunk.type === 'workflow-finish' || chunk.type === 'workflow.error';
+  return chunk.type === 'workflow.error' || (chunk.type === 'workflow-finish' && chunk.payload?.workflowStatus === 'success');
 }
 
 function unsubscribe(runId, subscriber) {
@@ -70,7 +70,7 @@ async function main() {
   async function publishChunk(runId, chunk) {
     const event = await appendEvent(pool, runId, chunk.type, { chunk });
     for (const subscriber of [...(subscribers.get(runId) ?? [])]) {
-      if (subscriber.closed) continue;
+      if (subscriber.closed || event.sequence <= subscriber.after) continue;
       if (subscriber.replaying) subscriber.pending.set(event.sequence, event);
       else writeOnce(runId, subscriber, event);
     }
@@ -78,11 +78,17 @@ async function main() {
   }
 
   async function consume(runId, output) {
+    let publishedError = false;
     try {
-      for await (const chunk of output.fullStream) await publishChunk(runId, chunk);
-      return await output.result;
+      for await (const chunk of output.fullStream) {
+        if (chunk.type === 'workflow.error') publishedError = true;
+        await publishChunk(runId, chunk);
+      }
+      const result = await output.result;
+      if (result.status === 'failed') throw result.error;
+      return result;
     } catch (error) {
-      await publishChunk(runId, { type: 'workflow.error', error: error.message });
+      if (!publishedError) await publishChunk(runId, { type: 'workflow.error', error: error.message });
       throw error;
     } finally {
       activeRuns.delete(runId);
@@ -90,24 +96,36 @@ async function main() {
   }
 
   async function startRun(runId) {
-    const workflow = mastra.getWorkflow('topology-workflow');
-    const run = await workflow.createRun({ runId });
-    const output = run.stream({ inputData: { runId }, closeOnSuspend: true });
-    activeRuns.set(runId, output);
-    await consume(runId, output);
+    let output;
+    try {
+      const workflow = mastra.getWorkflow('topology-workflow');
+      const run = await workflow.createRun({ runId });
+      output = run.stream({ inputData: { runId }, closeOnSuspend: true });
+      activeRuns.set(runId, output);
+      return await consume(runId, output);
+    } catch (error) {
+      if (!output) await publishChunk(runId, { type: 'workflow.error', error: error.message });
+      throw error;
+    }
   }
 
   async function resumeRun(runId, resumeData) {
-    const workflow = mastra.getWorkflow('topology-workflow');
-    const run = await workflow.createRun({ runId });
-    const output = run.resumeStream({ step: 'operator-gate', resumeData });
-    activeRuns.set(runId, output);
-    await consume(runId, output);
+    let output;
+    try {
+      const workflow = mastra.getWorkflow('topology-workflow');
+      const run = await workflow.createRun({ runId });
+      output = run.resumeStream({ step: 'operator-gate', resumeData });
+      activeRuns.set(runId, output);
+      return await consume(runId, output);
+    } catch (error) {
+      if (!output) await publishChunk(runId, { type: 'workflow.error', error: error.message });
+      throw error;
+    }
   }
 
   async function streamEvents(res, runId, after) {
     sseHeaders(res);
-    const subscriber = { res, sequences: new Set(), pending: new Map(), replaying: true, closed: false };
+    const subscriber = { res, after, sequences: new Set(), pending: new Map(), replaying: true, closed: false };
     const list = subscribers.get(runId) ?? new Set();
     list.add(subscriber);
     subscribers.set(runId, list);
@@ -132,7 +150,7 @@ async function main() {
         const { runId } = await readObject(req);
         if (typeof runId !== 'string' || !runId) return json(res, 400, { error: 'runId is required' });
         await startRun(runId);
-        return json(res, 202, { runId, workflowId: 'topology-workflow' });
+        return json(res, 200, { runId, workflowId: 'topology-workflow' });
       }
       const resume = url.pathname.match(/^\/runs\/([^/]+)\/resume$/);
       if (req.method === 'POST' && resume) {
@@ -141,7 +159,7 @@ async function main() {
         if (body.command !== 'approve' || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey) return json(res, 400, { error: 'approve command and idempotencyKey are required' });
         const runId = decodeURIComponent(resume[1]);
         await resumeRun(runId, body);
-        return json(res, 202, { runId, accepted: true });
+        return json(res, 200, { runId, accepted: true });
       }
       const events = url.pathname.match(/^\/runs\/([^/]+)\/events$/);
       if (req.method === 'GET' && events) {

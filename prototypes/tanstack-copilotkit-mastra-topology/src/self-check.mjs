@@ -45,6 +45,18 @@ async function stopSupervisor(supervisor) {
   }
 }
 
+async function within(promise, milliseconds, message) {
+  const controller = new AbortController();
+  try {
+    return await Promise.race([
+      promise,
+      delay(milliseconds, undefined, { signal: controller.signal }).then(() => { throw new Error(message); }),
+    ]);
+  } finally {
+    controller.abort();
+  }
+}
+
 async function portIsFree(port) {
   const server = http.createServer();
   try {
@@ -153,6 +165,12 @@ async function scalar(pool, sql) {
   return { value: String(Object.values(row)[0]) };
 }
 
+async function countForRun(pool, table, runId) {
+  await assertScratchDatabase(pool);
+  const { rows: [row] } = await pool.query(`select count(*) from topology_factory.${table} where run_id = $1`, [runId]);
+  return Number(row.count);
+}
+
 async function startRun() {
   const start = await request('/api/runs', { method: 'POST', headers: operatorHeaders });
   assert.equal(start.status, 200);
@@ -175,8 +193,8 @@ async function main() {
   try {
     await portsAreFree();
     if (!await postgresWasRunning()) {
-      await run('docker', ['compose', 'up', '-d', '--wait', 'postgres'], { stdio: 'inherit' });
       startedPostgres = true;
+      await run('docker', ['compose', 'up', '-d', '--wait', 'postgres'], { stdio: 'inherit' });
     }
     pool = createPool();
     await assertScratchDatabase(pool);
@@ -237,6 +255,35 @@ async function main() {
     const duplicate = await approve(runId, 'approve-1');
     assert.equal(duplicate.status, 200);
     assert.equal((await scalar(pool, 'select count(*) from topology_factory.effects')).value, '1');
+    const stale = await approve(runId, 'approve-stale');
+    assert.equal(stale.status, 409);
+
+    const recoveredRunId = 'effect-before-confirmation';
+    await pool.query(
+      "insert into topology_factory.missions (run_id, mission_id, status, gate) values ($1, $1, 'running', 'pending')",
+      [recoveredRunId],
+    );
+    await pool.query(
+      'insert into topology_factory.effects (idempotency_key, run_id) values ($1, $2)',
+      [`${recoveredRunId}:publish`, recoveredRunId],
+    );
+    const recovered = await approve(recoveredRunId, 'recover-command');
+    assert.equal(recovered.status, 200);
+    assert.equal(await countForRun(pool, 'commands', recoveredRunId), 1);
+    assert.equal((await scalar(pool, `select gate from topology_factory.missions where run_id = '${recoveredRunId}'`)).value, 'satisfied');
+
+    const concurrent = await startRun();
+    const concurrentPending = await nextEvents(concurrent.runId, 0, event => event.kind === 'workflow.suspended');
+    const concurrentApprovals = await within(
+      Promise.all(Array.from({ length: 10 }, () => approve(concurrent.runId, 'approve-concurrent'))),
+      5_000,
+      'Concurrent approvals deadlocked',
+    );
+    for (const response of concurrentApprovals) assert.equal(response.status, 200);
+    const concurrentCompleted = await nextEvents(concurrent.runId, concurrentPending.sequence, event => event.kind === 'workflow.completed');
+    assert.equal(concurrentCompleted.runId, concurrent.runId);
+    assert.equal(await countForRun(pool, 'commands', concurrent.runId), 1);
+    assert.equal(await countForRun(pool, 'effects', concurrent.runId), 1);
 
     const replay = await nextEvents(runId, completed.sequence, () => true, 250);
     assert.equal(replay, undefined);
@@ -247,8 +294,8 @@ async function main() {
     const second = await startRun();
     const secondPending = await nextEvents(second.runId, 0, event => event.kind === 'workflow.suspended');
     assert.equal(secondPending.runId, second.runId);
-    const bffRestart = await fetch(`${supervisorUrl}/admin/restart/bff`, { method: 'POST' });
-    assert.equal(bffRestart.status, 202);
+    const bffRestarts = await Promise.all(Array.from({ length: 10 }, () => fetch(`${supervisorUrl}/admin/restart/bff`, { method: 'POST' })));
+    for (const bffRestart of bffRestarts) assert.equal(bffRestart.status, 202);
     await waitFor(`${bffUrl}/health`);
     const reconnected = await nextEvents(second.runId, 0, event => event.kind === 'workflow.suspended');
     assert.equal(reconnected.runId, second.runId);
@@ -268,6 +315,7 @@ async function main() {
   } finally {
     for (const cleanup of [
       () => stopSupervisor(supervisor),
+      () => portsAreFree(),
       () => pool && resetSchemas(pool),
       () => closePool(pool),
       () => startedPostgres && run('docker', ['compose', 'stop', 'postgres'], { stdio: 'inherit' }),
