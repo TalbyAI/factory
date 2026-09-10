@@ -34,11 +34,11 @@ assert.deepEqual(attentionOrder, [
   'mission-change-proposal'
 ]);
 
-assert.equal(missionsById.get('mission-feature-gate').children.join(','), 'mission-feature-implementation,mission-pr-review');
+assert.deepEqual(missionsById.get('mission-feature-gate').children, ['mission-feature-implementation']);
 assert.equal(missionsById.get('mission-feature-implementation').parentId, 'mission-feature-gate');
-assert.equal(missionsById.get('mission-pr-review').parentId, 'mission-feature-gate');
+assert.equal(missionsById.get('mission-pr-review').parentId, undefined);
 assert.equal(missionsById.get('mission-feature-implementation').frontier.status, 'blocked');
-assert.match(missionsById.get('mission-feature-implementation').frontier.reason, /dep-invoice-fixtures/);
+assert.match(missionsById.get('mission-feature-implementation').frontier.reason, /dep-customer-export-fixtures/);
 assert.equal(missionsById.get('mission-pr-review').frontier.status, 'waiting');
 assert.equal(missionsById.get('mission-change-proposal').frontier.status, 'eligible');
 assert.notEqual(missionsById.get('mission-feature-implementation').frontier.status, 'eligible');
@@ -69,6 +69,10 @@ const driftMission = missionsById.get('mission-bug-drift');
 assert.equal(driftMission.authority, 'Exact Operator approval');
 assert.equal(driftMission.gates[0].status, 'Pending');
 assert.equal(actionIsEnabled(driftMission), false);
+assert.equal(actionIsEnabled({ ...driftMission, revisionValid: false }), false);
+const driftMissionWithoutRevision = { ...driftMission };
+delete driftMissionWithoutRevision.revisionValid;
+assert.equal(actionIsEnabled(driftMissionWithoutRevision), false);
 
 const artifactIds = fixture.missions.flatMap((mission) => mission.artifacts.map((artifact) => artifact.id));
 assert.equal(new Set(artifactIds).size, artifactIds.length);

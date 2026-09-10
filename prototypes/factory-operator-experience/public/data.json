@@ -10,7 +10,7 @@
       "revisionId": "mission-feature-gate-r1",
       "run": null,
       "badges": ["Human Gate"],
-      "children": ["mission-feature-implementation", "mission-pr-review"],
+      "children": ["mission-feature-implementation"],
       "nextAction": "Approve the export scope gate",
       "nextActionSimulated": true,
       "revisionValid": true,
@@ -49,7 +49,7 @@
     },
     {
       "id": "mission-feature-implementation",
-      "title": "Implement invoice reconciliation",
+      "title": "Implement customer export filters",
       "workType": "Feature Implementation",
       "state": "Open",
       "situation": "Waiting",
@@ -58,43 +58,43 @@
       "parentId": "mission-feature-gate",
       "run": null,
       "badges": ["Blocked"],
-      "nextAction": "Unblock the invoice fixture dependency",
+      "nextAction": "Unblock the customer export fixture dependency",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Autonomy Grant",
-      "frontier": { "status": "blocked", "reason": "Mission dependency dep-invoice-fixtures is Blocked; it is not eligible." },
-      "overview": "Implement reconciliation rules and verify them against invoice fixtures.",
+      "frontier": { "status": "blocked", "reason": "Mission dependency dep-customer-export-fixtures is Blocked; it is not eligible." },
+      "overview": "Implement saved customer export filters and verify them against export fixtures.",
       "timeline": [{
         "at": "2026-09-10T08:05:00Z",
         "label": "Execution Frontier evaluated",
-        "detail": "The blocked invoice fixture dependency prevents this Mission from becoming eligible.",
+        "detail": "The blocked customer export fixture dependency prevents this Mission from becoming eligible.",
         "refs": [
-          { "type": "Gate", "id": "gate-reconciliation-review" },
-          { "type": "Artifact", "id": "artifact-reconciliation", "revisionId": "artifact-reconciliation-r1" },
-          { "type": "Dependency", "id": "dep-invoice-fixtures" }
+          { "type": "Gate", "id": "gate-export-implementation-review" },
+          { "type": "Artifact", "id": "artifact-customer-export-implementation", "revisionId": "artifact-customer-export-implementation-r1" },
+          { "type": "Dependency", "id": "dep-customer-export-fixtures" }
         ]
       }],
       "gates": [{
-        "id": "gate-reconciliation-review",
+        "id": "gate-export-implementation-review",
         "kind": "Mission Gate",
-        "name": "Reconciliation review",
+        "name": "Export implementation review",
         "status": "Satisfied",
         "owner": "Engineering",
-        "evidence": { "evidenceId": "evidence-reconciliation", "revisionId": "evidence-reconciliation-r1", "appliesToRevision": "mission-feature-implementation-r1" }
+        "evidence": { "evidenceId": "evidence-customer-export-implementation", "revisionId": "evidence-customer-export-implementation-r1", "appliesToRevision": "mission-feature-implementation-r1" }
       }],
-      "dependencies": [{ "id": "dep-invoice-fixtures", "name": "Invoice fixtures", "status": "Blocked" }],
+      "dependencies": [{ "id": "dep-customer-export-fixtures", "name": "Customer export fixtures", "status": "Blocked" }],
       "evidence": [{
-        "id": "evidence-reconciliation",
+        "id": "evidence-customer-export-implementation",
         "kind": "Test",
-        "label": "Reconciliation rule suite",
+        "label": "Customer export filter suite",
         "status": "Pending",
-        "revisionId": "evidence-reconciliation-r1",
+        "revisionId": "evidence-customer-export-implementation-r1",
         "refs": [
-          { "type": "Artifact", "id": "artifact-reconciliation", "revisionId": "artifact-reconciliation-r1" },
-          { "type": "Dependency", "id": "dep-invoice-fixtures" }
+          { "type": "Artifact", "id": "artifact-customer-export-implementation", "revisionId": "artifact-customer-export-implementation-r1" },
+          { "type": "Dependency", "id": "dep-customer-export-fixtures" }
         ]
       }],
-      "artifacts": [{ "id": "artifact-reconciliation", "name": "Reconciliation Artifact", "revisionId": "artifact-reconciliation-r1", "status": "Draft", "immutable": true }],
+      "artifacts": [{ "id": "artifact-customer-export-implementation", "name": "Customer export implementation Artifact", "revisionId": "artifact-customer-export-implementation-r1", "status": "Draft", "immutable": true }],
       "drift": []
     },
     {
@@ -105,7 +105,6 @@
       "situation": "Running",
       "attentionRank": 4,
       "revisionId": "mission-pr-review-r1",
-      "parentId": "mission-feature-gate",
       "run": { "id": "run-payment-retry-review", "status": "Running", "attention": "normal" },
       "badges": ["Running"],
       "nextAction": "Inspect the retry test evidence",
