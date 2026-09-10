@@ -1,0 +1,20 @@
+services:
+  mission:
+    build:
+      context: .
+    image: ${MISSION_IMAGE:?MISSION_IMAGE is required}
+    user: "65532:65532"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec
+    environment:
+      MISSION_ID: ${MISSION_ID:?MISSION_ID is required}
+      SCENARIO: ${SCENARIO:?SCENARIO is required}
