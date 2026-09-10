@@ -1,0 +1,14 @@
+{
+  "name": "mastra-postgres-recovery-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prototype": "node src/harness.mjs"
+  },
+  "dependencies": {
+    "@mastra/core": "1.64.0",
+    "@mastra/pg": "1.22.3",
+    "pg": "8.16.3",
+    "zod": "4.1.8"
+  }
+}
