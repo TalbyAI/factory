@@ -34,7 +34,7 @@
 - `db.mjs` exports `createPool()`, `assertScratchDatabase(pool)`, `resetSchemas(pool)`, and `closePool(pool)`.
 - `protocol.mjs` exports `json(res, status, value)`, `readJson(req)`, `sseHeaders(res)`, `writeEvent(res, event)`, and `eventFromRow(row)`.
 
-- [ ] **Step 1: Copy the already-proven pinned Mastra dependency set into the new manifest.**
+- [x] **Step 1: Copy the already-proven pinned Mastra dependency set into the new manifest.**
 
 ```json
 {
@@ -54,7 +54,7 @@
 }
 ```
 
-- [ ] **Step 2: Add a disposable PostgreSQL service with an explicit database name and port.**
+- [x] **Step 2: Add a disposable PostgreSQL service with an explicit database name and port.**
 
 ```yaml
 services:
@@ -78,7 +78,7 @@ volumes:
   topology-prototype:
 ```
 
-- [ ] **Step 3: Implement the shared configuration and scratch schema reset.**
+- [x] **Step 3: Implement the shared configuration and scratch schema reset.**
 
 ```js
 // src/config.mjs
@@ -146,7 +146,7 @@ export async function closePool(pool) {
 }
 ```
 
-- [ ] **Step 4: Implement JSON and SSE helpers with no framework dependency.**
+- [x] **Step 4: Implement JSON and SSE helpers with no framework dependency.**
 
 ```js
 // src/protocol.mjs
@@ -174,13 +174,13 @@ export function eventFromRow(row) {
 }
 ```
 
-- [ ] **Step 5: Install dependencies and verify the empty harness starts from a disposable database.**
+- [x] **Step 5: Install dependencies and verify the empty harness starts from a disposable database.**
 
 Run: `npm install` in `prototypes/tanstack-copilotkit-mastra-topology`, then `docker compose up -d postgres` and `node -e "import('./src/db.mjs').then(async ({createPool,resetSchemas,closePool}) => { const pool=createPool(); await resetSchemas(pool); await closePool(pool); })"`.
 
 Expected: npm creates a lockfile, PostgreSQL becomes healthy, and the command exits 0 without touching any database other than `topology_prototype`.
 
-- [ ] **Step 6: Commit the scaffold.**
+- [x] **Step 6: Commit the scaffold.**
 
 ```text
 git add prototypes/tanstack-copilotkit-mastra-topology
