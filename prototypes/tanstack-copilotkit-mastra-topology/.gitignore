@@ -5,3 +5,4 @@ npm-debug.log*
 coverage/
 dist/
 build/
+SELF-CHECK-REPORT.local.md

@@ -7,8 +7,5 @@
 !.vscode/*.code-snippets
 !*.code-workspace
 
-# Local prototype verification evidence
-prototypes/tanstack-copilotkit-mastra-topology/SELF-CHECK-REPORT.local.md
-
 # Built Visual Studio Code Extensions
 *.vsix
