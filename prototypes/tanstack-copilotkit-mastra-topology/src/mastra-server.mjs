@@ -8,9 +8,26 @@ import { json, readJson, sseHeaders, writeEvent } from './protocol.mjs';
 
 const subscribers = new Map();
 const activeRuns = new Map();
+const maxCursor = 2_147_483_647;
 
 function authorizedService(req) {
   return req.headers.authorization === `Bearer ${config.serviceToken}`;
+}
+
+async function readObject(req) {
+  try {
+    const body = await readJson(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('request body must be a JSON object');
+    return body;
+  } catch (error) {
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function cursor(url) {
+  const after = Number(url.searchParams.get('after') ?? 0);
+  return Number.isSafeInteger(after) && after >= 0 && after <= maxCursor ? after : undefined;
 }
 
 function terminal(chunk) {
@@ -63,9 +80,10 @@ async function main() {
   async function consume(runId, output) {
     try {
       for await (const chunk of output.fullStream) await publishChunk(runId, chunk);
-      await output.result;
+      return await output.result;
     } catch (error) {
       await publishChunk(runId, { type: 'workflow.error', error: error.message });
+      throw error;
     } finally {
       activeRuns.delete(runId);
     }
@@ -76,7 +94,7 @@ async function main() {
     const run = await workflow.createRun({ runId });
     const output = run.stream({ inputData: { runId }, closeOnSuspend: true });
     activeRuns.set(runId, output);
-    void consume(runId, output);
+    await consume(runId, output);
   }
 
   async function resumeRun(runId, resumeData) {
@@ -84,7 +102,7 @@ async function main() {
     const run = await workflow.createRun({ runId });
     const output = run.resumeStream({ step: 'operator-gate', resumeData });
     activeRuns.set(runId, output);
-    void consume(runId, output);
+    await consume(runId, output);
   }
 
   async function streamEvents(res, runId, after) {
@@ -111,30 +129,31 @@ async function main() {
       if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
       if (req.method === 'POST' && url.pathname === '/runs') {
         if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
-        const { runId } = await readJson(req);
+        const { runId } = await readObject(req);
         if (typeof runId !== 'string' || !runId) return json(res, 400, { error: 'runId is required' });
-        void startRun(runId).catch(error => publishChunk(runId, { type: 'workflow.error', error: error.message }));
+        await startRun(runId);
         return json(res, 202, { runId, workflowId: 'topology-workflow' });
       }
       const resume = url.pathname.match(/^\/runs\/([^/]+)\/resume$/);
       if (req.method === 'POST' && resume) {
         if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
-        const body = await readJson(req);
+        const body = await readObject(req);
         if (body.command !== 'approve' || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey) return json(res, 400, { error: 'approve command and idempotencyKey are required' });
         const runId = decodeURIComponent(resume[1]);
-        void resumeRun(runId, body).catch(error => publishChunk(runId, { type: 'workflow.error', error: error.message }));
+        await resumeRun(runId, body);
         return json(res, 202, { runId, accepted: true });
       }
       const events = url.pathname.match(/^\/runs\/([^/]+)\/events$/);
       if (req.method === 'GET' && events) {
         if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
-        const after = Number(url.searchParams.get('after') ?? 0);
-        if (!Number.isInteger(after) || after < 0) return json(res, 400, { error: 'after must be a non-negative integer' });
-        return streamEvents(res, decodeURIComponent(events[1]), after);
+        const after = cursor(url);
+        if (after === undefined) return json(res, 400, { error: 'after must be a non-negative integer within PostgreSQL range' });
+        return await streamEvents(res, decodeURIComponent(events[1]), after);
       }
       return json(res, 404, { error: 'not found' });
     } catch (error) {
-      return json(res, 500, { error: error.message });
+      if (!res.headersSent) return json(res, error.statusCode ?? 500, { error: error.message });
+      res.destroy();
     }
   });
 

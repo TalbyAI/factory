@@ -18,6 +18,33 @@ function run(command, args, options = {}) {
   });
 }
 
+async function waitForExit(child) {
+  const controller = new AbortController();
+  try {
+    const result = await Promise.race([
+      new Promise(resolve => child.once('exit', () => resolve('exit'))),
+      delay(5_000, 'timeout', { signal: controller.signal }),
+    ]);
+    if (result === 'timeout') throw new Error('Timed out stopping supervisor');
+  } finally {
+    controller.abort();
+  }
+}
+
+async function stopSupervisor(supervisor) {
+  if (supervisor?.exitCode !== null) return;
+  const exited = waitForExit(supervisor);
+  supervisor.kill('SIGINT');
+  try {
+    await exited;
+  } catch (error) {
+    if (supervisor.exitCode !== null) throw error;
+    const forcedExit = waitForExit(supervisor);
+    supervisor.kill('SIGKILL');
+    await forcedExit;
+  }
+}
+
 async function portIsFree(port) {
   const server = http.createServer();
   try {
@@ -65,6 +92,10 @@ async function waitFor(url) {
 
 async function request(path, options) {
   return fetch(new URL(path, bffUrl), options);
+}
+
+async function mastraRequest(path, options) {
+  return fetch(new URL(path, mastraUrl), options);
 }
 
 function semanticEvent(event) {
@@ -144,7 +175,7 @@ async function main() {
   try {
     await portsAreFree();
     if (!await postgresWasRunning()) {
-      await run('docker', ['compose', 'up', '-d', 'postgres'], { stdio: 'inherit' });
+      await run('docker', ['compose', 'up', '-d', '--wait', 'postgres'], { stdio: 'inherit' });
       startedPostgres = true;
     }
     pool = createPool();
@@ -152,6 +183,39 @@ async function main() {
     await resetSchemas(pool);
     supervisor = spawn(process.execPath, ['src/supervisor.mjs'], { stdio: 'inherit' });
     await Promise.all([waitFor(`${bffUrl}/health`), waitFor(`${mastraUrl}/health`)]);
+
+    const serviceHeaders = { authorization: `Bearer ${config.serviceToken}`, 'content-type': 'application/json' };
+    for (const body of ['null', '{']) {
+      const invalidStart = await mastraRequest('/runs', { method: 'POST', headers: serviceHeaders, body });
+      assert.equal(invalidStart.status, 400);
+      const invalidResume = await mastraRequest('/runs/invalid/resume', { method: 'POST', headers: serviceHeaders, body });
+      assert.equal(invalidResume.status, 400);
+    }
+    for (const url of [
+      `${bffUrl}/api/runs/invalid/events?after=2147483648`,
+      `${mastraUrl}/runs/invalid/events?after=2147483648`,
+    ]) {
+      const response = await fetch(url, { headers: url.startsWith(mastraUrl) ? serviceHeaders : undefined });
+      assert.equal(response.status, 400);
+    }
+    for (const body of ['null', '{']) {
+      const invalidCommand = await request('/api/runs/invalid/commands', {
+        method: 'POST', headers: { ...operatorHeaders, 'content-type': 'application/json' }, body,
+      });
+      assert.equal(invalidCommand.status, 400);
+    }
+    assert.equal((await fetch(`${bffUrl}/health`)).status, 200);
+    assert.equal((await fetch(`${mastraUrl}/health`)).status, 200);
+
+    const failedResumeId = 'missing-durable-run';
+    await pool.query(
+      "insert into topology_factory.missions (run_id, mission_id, status, gate) values ($1, $1, 'running', 'pending')",
+      [failedResumeId],
+    );
+    const failedResume = await approve(failedResumeId, 'resume-missing');
+    assert.notEqual(failedResume.status, 200);
+    assert.equal((await scalar(pool, `select gate from topology_factory.missions where run_id = '${failedResumeId}'`)).value, 'pending');
+    assert.equal((await scalar(pool, `select count(*) from topology_factory.commands where run_id = '${failedResumeId}'`)).value, '0');
 
     const { runId } = await startRun();
     const pending = await nextEvents(runId, 0, event => event.kind === 'workflow.suspended');
@@ -202,18 +266,18 @@ async function main() {
   } catch (error) {
     failure = error;
   } finally {
-    try {
-      if (supervisor?.exitCode === null) {
-        const stopped = new Promise(resolve => supervisor.once('exit', resolve));
-        supervisor.kill('SIGINT');
-        await stopped;
+    for (const cleanup of [
+      () => stopSupervisor(supervisor),
+      () => pool && resetSchemas(pool),
+      () => closePool(pool),
+      () => startedPostgres && run('docker', ['compose', 'stop', 'postgres'], { stdio: 'inherit' }),
+    ]) {
+      try {
+        await cleanup();
+      } catch (cleanupError) {
+        if (failure) console.error(cleanupError);
+        else failure = cleanupError;
       }
-      if (pool) await resetSchemas(pool);
-      await closePool(pool);
-      if (startedPostgres) await run('docker', ['compose', 'stop', 'postgres'], { stdio: 'inherit' });
-    } catch (cleanupError) {
-      if (failure) console.error(cleanupError);
-      else failure = cleanupError;
     }
   }
   if (failure) throw failure;

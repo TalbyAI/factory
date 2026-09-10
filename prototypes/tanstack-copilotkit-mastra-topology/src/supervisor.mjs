@@ -6,8 +6,10 @@ import { json } from './protocol.mjs';
 
 const children = new Map();
 const restarts = new Map();
+let shuttingDown = false;
 
 function start(name, file) {
+  if (shuttingDown) return;
   const child = spawn(process.execPath, [fileURLToPath(new URL(file, import.meta.url))], { stdio: 'inherit' });
   children.set(name, child);
   child.on('exit', () => {
@@ -17,6 +19,7 @@ function start(name, file) {
 }
 
 async function restartChild(name, file) {
+  if (shuttingDown) return;
   const child = children.get(name);
   if (child?.exitCode === null) {
     await new Promise(resolve => {
@@ -24,10 +27,12 @@ async function restartChild(name, file) {
       child.kill();
     });
   }
+  if (shuttingDown) return;
   start(name, file);
 }
 
 function restart(name, file) {
+  if (shuttingDown) return Promise.resolve();
   const pending = restarts.get(name);
   if (pending) return pending;
   const next = restartChild(name, file);
@@ -56,6 +61,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(config.supervisorPort, '127.0.0.1');
 process.once('SIGINT', () => {
+  shuttingDown = true;
   server.close();
   for (const child of children.values()) child.kill();
 });

@@ -9,6 +9,7 @@ import { json, readJson } from './protocol.mjs';
 const operatorKey = 'prototype-operator-key';
 const mastraUrl = `http://127.0.0.1:${config.mastraPort}`;
 const page = new URL('../public/index.html', import.meta.url);
+const maxCursor = 2_147_483_647;
 
 function authorizedOperator(req) {
   return req.headers['x-operator-key'] === operatorKey;
@@ -16,6 +17,22 @@ function authorizedOperator(req) {
 
 function authorizedService(req) {
   return req.headers.authorization === `Bearer ${config.serviceToken}`;
+}
+
+async function readObject(req) {
+  try {
+    const body = await readJson(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('request body must be a JSON object');
+    return body;
+  } catch (error) {
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function cursor(url) {
+  const after = Number(url.searchParams.get('after') ?? 0);
+  return Number.isSafeInteger(after) && after >= 0 && after <= maxCursor ? after : undefined;
 }
 
 async function startRun(pool, res) {
@@ -154,9 +171,8 @@ async function approve(pool, res, runId, body) {
   }
 }
 
-async function recordEffect(pool, req, res) {
+async function recordEffect(pool, req, res, body) {
   const idempotencyKey = req.headers['idempotency-key'];
-  const body = await readJson(req);
   if (typeof idempotencyKey !== 'string' || !idempotencyKey || typeof body.runId !== 'string' || !body.runId) {
     return json(res, 400, { error: 'runId and Idempotency-Key are required' });
   }
@@ -180,26 +196,26 @@ async function main() {
       }
       if (req.method === 'POST' && url.pathname === '/api/runs') {
         if (!authorizedOperator(req)) return json(res, 401, { error: 'operator authorization required' });
-        return startRun(pool, res);
+        return await startRun(pool, res);
       }
       const events = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/);
       if (req.method === 'GET' && events) {
-        const after = Number(url.searchParams.get('after') ?? 0);
-        if (!Number.isInteger(after) || after < 0) return json(res, 400, { error: 'after must be a non-negative integer' });
+        const after = cursor(url);
+        if (after === undefined) return json(res, 400, { error: 'after must be a non-negative integer within PostgreSQL range' });
         return await proxyEvents(req, res, decodeURIComponent(events[1]), after);
       }
       const commands = url.pathname.match(/^\/api\/runs\/([^/]+)\/commands$/);
       if (req.method === 'POST' && commands) {
         if (!authorizedOperator(req)) return json(res, 401, { error: 'operator authorization required' });
-        return approve(pool, res, decodeURIComponent(commands[1]), await readJson(req));
+        return await approve(pool, res, decodeURIComponent(commands[1]), await readObject(req));
       }
       if (req.method === 'POST' && url.pathname === '/internal/effects') {
         if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
-        return recordEffect(pool, req, res);
+        return await recordEffect(pool, req, res, await readObject(req));
       }
       return json(res, 404, { error: 'not found' });
     } catch (error) {
-      if (!res.headersSent) return json(res, 500, { error: error.message });
+      if (!res.headersSent) return json(res, error.statusCode ?? 500, { error: error.message });
       res.destroy();
     }
   });
