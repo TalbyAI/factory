@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DOCKER_MAX_BUFFER = 4 * 1024 * 1024;
 const DOCKER_TIMEOUT = 30_000;
 const HOST_SENTINEL = 'factory-test-secret-host-only';
 const SOURCE_FILE = join(dirname(fileURLToPath(import.meta.url)), '..');
+const EXPECTED_MISSION_CHECKS = Object.freeze([
+  'missionWriteDenied',
+  'rootWriteDenied',
+  'artifactsWritable',
+  'noSecretEnvironment',
+  'noHostSecret',
+  'noMountedSecret',
+  'networkDisabled',
+  'pidIsOne',
+]);
 
 export function runDocker(args, options = {}) {
   return new Promise((resolveResult) => {
@@ -37,6 +47,30 @@ export async function sha256File(file) {
   return createHash('sha256').update(await readFile(file)).digest('hex');
 }
 
+function isContained(root, target) {
+  const relativePath = relative(root, target);
+  return relativePath !== ''
+    && relativePath !== '..'
+    && !relativePath.startsWith(`..${sep}`)
+    && !isAbsolute(relativePath);
+}
+
+async function safeArtifactPath(artifactRoot, name) {
+  const candidate = resolve(artifactRoot, name);
+  assert.ok(isContained(artifactRoot, candidate), `Artifact path escapes ${artifactRoot}: ${name}`);
+
+  const entry = await lstat(candidate);
+  assert.equal(entry.isSymbolicLink(), false, `Artifact is a symlink: ${name}`);
+  assert.equal(entry.isFile(), true, `Artifact is not a regular file: ${name}`);
+
+  const resolvedPath = await realpath(candidate);
+  assert.ok(isContained(artifactRoot, resolvedPath), `Artifact path escapes ${artifactRoot}: ${name}`);
+  const resolvedEntry = await lstat(resolvedPath);
+  assert.equal(resolvedEntry.isSymbolicLink(), false, `Artifact is a symlink: ${name}`);
+  assert.equal(resolvedEntry.isFile(), true, `Artifact is not a regular file: ${name}`);
+  return resolvedPath;
+}
+
 export async function inspectContainer(name) {
   const result = await runDocker(['inspect', name]);
   assert.equal(result.code, 0, `docker inspect failed for ${name}: ${result.stderr}`);
@@ -58,7 +92,7 @@ export async function prepareMission(scratchRoot, missionId) {
   return { id, checkoutDir, artifactDir, checkoutHash: await sha256File(markerPath) };
 }
 
-export function assertContainerSecurity(container) {
+export function assertContainerSecurity(container, mission) {
   assert.equal(container.HostConfig.NetworkMode, 'none');
   assert.equal(container.HostConfig.ReadonlyRootfs, true);
   assert.equal(container.Config.User, '65532:65532');
@@ -66,9 +100,23 @@ export function assertContainerSecurity(container) {
   assert.ok(container.HostConfig.SecurityOpt.includes('no-new-privileges:true'));
   assert.notEqual(container.HostConfig.PidMode, 'host');
   assert.notEqual(container.HostConfig.IpcMode, 'host');
+  assert.equal(container.HostConfig.Memory, 128 * 1024 * 1024);
+  assert.equal(container.HostConfig.NanoCpus, 1e9);
+  assert.equal(container.HostConfig.PidsLimit, 64);
+  assert.equal(container.HostConfig.Privileged, false);
+  assert.deepEqual(container.HostConfig.Tmpfs, { '/tmp': 'rw,nosuid,nodev,noexec' });
   assert.deepEqual(
     container.Mounts.map(({ Type, Destination }) => [Type, Destination]).sort(),
     [['bind', '/artifacts'], ['bind', '/mission']],
+  );
+  assert.deepEqual(
+    container.Mounts.map(({ Type, Source, Destination, Mode, RW }) => ({
+      Type, Source, Destination, Mode, RW,
+    })).sort((left, right) => left.Destination.localeCompare(right.Destination)),
+    [
+      { Type: 'bind', Source: mission.artifactDir, Destination: '/artifacts', Mode: 'rw', RW: true },
+      { Type: 'bind', Source: mission.checkoutDir, Destination: '/mission', Mode: 'ro', RW: false },
+    ].sort((left, right) => left.Destination.localeCompare(right.Destination)),
   );
 }
 
@@ -102,32 +150,48 @@ async function cleanupMission(composeFile, image, mission, cleanup) {
 }
 
 export async function runMission({ image, composeFile, mission }) {
-  const context = composeContext(composeFile);
-  const env = missionEnvironment(image, mission);
-  const runArgs = [
-    'compose', '--ansi', 'never', '-f', context.file, '-p', mission.projectName,
-    'run', '--no-deps', '-T', '--name', mission.containerName,
-    '--volume', `${mission.checkoutDir}:/mission:ro`,
-    '--volume', `${mission.artifactDir}:/artifacts:rw`,
-    'mission',
-  ];
-  const resultPath = join(mission.artifactDir, 'result.json');
   const cleanup = [];
+  let value;
+  let missionError;
 
   try {
+    const context = composeContext(composeFile);
+    const env = missionEnvironment(image, mission);
+    const runArgs = [
+      'compose', '--ansi', 'never', '-f', context.file, '-p', mission.projectName,
+      'run', '--no-deps', '-T', '--name', mission.containerName,
+      '--volume', `${mission.checkoutDir}:/mission:ro`,
+      '--volume', `${mission.artifactDir}:/artifacts:rw`,
+      'mission',
+    ];
     const run = await runDocker(runArgs, { cwd: context.cwd, env });
     const container = await inspectContainer(mission.containerName);
-    assertContainerSecurity(container);
+    assertContainerSecurity(container, mission);
     assert.equal(run.code, 0, `Mission ${mission.id} failed: ${run.stderr}`);
     assert.equal(`${run.stdout}\n${run.stderr}`.includes(HOST_SENTINEL), false, 'Host sentinel leaked into Docker output');
 
-    const resultText = await readFile(resultPath, 'utf8');
+    const artifactDirectory = await lstat(mission.artifactDir);
+    assert.equal(artifactDirectory.isSymbolicLink(), false, `Artifact directory is a symlink: ${mission.artifactDir}`);
+    assert.equal(artifactDirectory.isDirectory(), true, `Artifact directory is not a directory: ${mission.artifactDir}`);
+    const artifactRoot = await realpath(mission.artifactDir);
+    const resultText = await readFile(await safeArtifactPath(artifactRoot, 'result.json'), 'utf8');
     const report = JSON.parse(resultText);
     assert.equal(report.missionId, mission.id);
     assert.equal(report.scenario, mission.scenario ?? mission.id);
-    assert.ok(report.checks && typeof report.checks === 'object');
-    for (const [name, passed] of Object.entries(report.checks)) {
-      assert.equal(passed, true, `Mission ${mission.id} check failed: ${name}`);
+    assert.ok(
+      report.checks !== null
+        && typeof report.checks === 'object'
+        && !Array.isArray(report.checks),
+      `Mission ${mission.id} checks must be a non-array object`,
+    );
+    assert.deepEqual(
+      Object.keys(report.checks).sort(),
+      [...EXPECTED_MISSION_CHECKS].sort(),
+      `Mission ${mission.id} checks have unexpected keys`,
+    );
+    for (const name of EXPECTED_MISSION_CHECKS) {
+      assert.equal(typeof report.checks[name], 'boolean', `Mission ${mission.id} check is not boolean: ${name}`);
+      assert.equal(report.checks[name], true, `Mission ${mission.id} check failed: ${name}`);
     }
     assert.equal(resultText.includes(HOST_SENTINEL), false, 'Host sentinel leaked into result.json');
 
@@ -135,14 +199,13 @@ export async function runMission({ image, composeFile, mission }) {
     assert.equal(checkoutHashAfter, mission.checkoutHash);
     assert.equal(report.sourceHash, mission.checkoutHash);
 
-    const artifactNames = (await readdir(mission.artifactDir)).sort();
-    const artifacts = await Promise.all(artifactNames.map(async (name) => ({
-      name,
-      path: join(mission.artifactDir, name),
-      sha256: await sha256File(join(mission.artifactDir, name)),
-    })));
+    const artifactNames = (await readdir(artifactRoot)).sort();
+    const artifacts = await Promise.all(artifactNames.map(async (name) => {
+      const path = await safeArtifactPath(artifactRoot, name);
+      return { name, path, sha256: await sha256File(path) };
+    }));
 
-    return {
+    value = {
       missionId: mission.id,
       scenario: mission.scenario ?? mission.id,
       projectName: mission.projectName,
@@ -163,9 +226,27 @@ export async function runMission({ image, composeFile, mission }) {
       stderr: run.stderr,
       cleanup,
     };
-  } finally {
-    await cleanupMission(composeFile, image, mission, cleanup);
+  } catch (error) {
+    missionError = error;
   }
+
+  let cleanupError;
+  try {
+    await cleanupMission(composeFile, image, mission, cleanup);
+  } catch (error) {
+    cleanupError = error;
+  }
+
+  if (missionError) {
+    missionError.cleanup = cleanup;
+    if (cleanupError) missionError.cleanupError = cleanupError;
+    throw missionError;
+  }
+  if (cleanupError) {
+    cleanupError.cleanup = cleanup;
+    throw cleanupError;
+  }
+  return { ...value, cleanup };
 }
 
 export async function main() {
@@ -199,15 +280,37 @@ export async function main() {
     const build = await runDocker(buildArgs, { cwd: prototypeRoot, env: buildEnv });
     assert.equal(build.code, 0, `Mission image build failed: ${build.stderr}`);
 
-    const missionResults = await Promise.all(missions.map(async (mission) => {
-      try {
-        return { status: 'fulfilled', value: await runMission({ image, composeFile, mission }) };
-      } catch (reason) {
-        return { status: 'rejected', reason };
+    const missionResults = await Promise.allSettled(
+      missions.map((mission) => runMission({ image, composeFile, mission })),
+    );
+    const cleanupFailures = [];
+    for (const [index, settlement] of missionResults.entries()) {
+      const mission = missions[index];
+      const outcome = settlement.status === 'fulfilled' ? settlement.value : settlement.reason;
+      const missionCleanup = outcome?.cleanup;
+      if (!Array.isArray(missionCleanup)) {
+        cleanupFailures.push(new Error(`Mission ${mission.id} did not expose cleanup`));
+        continue;
       }
-    }));
+      if (missionCleanup.length !== 2) {
+        cleanupFailures.push(new Error(`Mission ${mission.id} cleanup was incomplete`));
+      }
+      const failedCleanup = missionCleanup.find(({ code }) => code !== 0);
+      if (failedCleanup) {
+        cleanupFailures.push(new Error(`Mission ${mission.id} cleanup failed: ${failedCleanup.stderr}`));
+      }
+      if (settlement.status === 'rejected' && settlement.reason?.cleanupError) {
+        cleanupFailures.push(new Error(`Mission ${mission.id} cleanup threw: ${settlement.reason.cleanupError.message}`));
+      }
+    }
     const rejected = missionResults.find(({ status }) => status === 'rejected');
-    if (rejected) throw rejected.reason;
+    if (rejected) {
+      if (cleanupFailures.length > 0 && rejected.reason && typeof rejected.reason === 'object') {
+        rejected.reason.cleanupFailures = cleanupFailures;
+      }
+      throw rejected.reason;
+    }
+    if (cleanupFailures.length > 0) throw cleanupFailures[0];
     const reports = missionResults.map(({ value }) => value);
     assert.equal(reports[0].containerId === reports[1].containerId, false, 'Missions reused a container');
     assert.equal(reports[0].artifactDir === reports[1].artifactDir, false, 'Missions reused an artifact directory');

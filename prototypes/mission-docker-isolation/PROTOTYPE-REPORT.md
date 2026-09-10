@@ -4,9 +4,10 @@
 
 Under a trusted host, Docker Engine, and kernel, can this repeatable Docker
 Compose prototype run two untrusted Missions so that each reads its own
-checkout, writes only to its own Artifact directory, cannot mutate its
-checkout or root filesystem, has no network or host secret, and leaves no
-created Docker or temporary resources behind?
+checkout, writes `result.json` and its other Artifacts to its own Mission
+Artifact directory, cannot mutate its checkout or root filesystem, has no
+network or host secret, and leaves no created Docker or temporary resources
+behind?
 
 ## Environment observed
 
@@ -27,7 +28,7 @@ The successful run used `npm run prototype` from
 > prototype
 > node src/harness.mjs
 
-{"image":"factory-mission-isolation:mtvp6tbg-bb1996d286","missions":[{"missionId":"alpha","marker":"alpha-marker","containerId":"2e4c35810d7123383638075db047b8a55b9c534d563bc9604c2ed836419cd296","checkoutHash":"be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25","artifactDir":"C:\\Users\\iskan\\AppData\\Local\\Temp\\mission-docker-isolation-2evdOm\\alpha\\artifacts"},{"missionId":"beta","marker":"beta-marker","containerId":"108d5bd7a4b2fd3277fb85b1e51949d7f280ef5c299a20ec9317175e5a2e768c","checkoutHash":"4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb","artifactDir":"C:\\Users\\iskan\\AppData\\Local\\Temp\\mission-docker-isolation-2evdOm\\beta\\artifacts"}],"evidenceFile":"E:\\talby\\factory\\prototypes\\mission-docker-isolation\\PROTOTYPE-EVIDENCE.local.json","cleaned":true}
+{"image":"factory-mission-isolation:mtvp6tbg-bb1996d286","missions":[{"missionId":"alpha","marker":"alpha-marker","containerId":"2e4c35810d7123383638075db047b8a55b9c534d563bc9604c2ed836419cd296","checkoutHash":"be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25","artifactDir":"<temp>/mission-docker-isolation-2evdOm/alpha/artifacts"},{"missionId":"beta","marker":"beta-marker","containerId":"108d5bd7a4b2fd3277fb85b1e51949d7f280ef5c299a20ec9317175e5a2e768c","checkoutHash":"4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb","artifactDir":"<temp>/mission-docker-isolation-2evdOm/beta/artifacts"}],"evidenceFile":"prototypes/mission-docker-isolation/PROTOTYPE-EVIDENCE.local.json","cleaned":true}
 ```
 
 The ignored local evidence recorded one image for both Missions:
@@ -40,21 +41,21 @@ The ignored local evidence recorded one image for both Missions:
   checkout hash before and after
   `be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25`,
   Artifact directory
-  `C:\Users\iskan\AppData\Local\Temp\mission-docker-isolation-2evdOm\alpha\artifacts`
+  `<temp>/mission-docker-isolation-2evdOm/alpha/artifacts`
 - `beta`: container
   `108d5bd7a4b2fd3277fb85b1e51949d7f280ef5c299a20ec9317175e5a2e768c`,
   checkout hash before and after
   `4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb`,
   Artifact directory
-  `C:\Users\iskan\AppData\Local\Temp\mission-docker-isolation-2evdOm\beta\artifacts`
+  `<temp>/mission-docker-isolation-2evdOm/beta/artifacts`
 
 Both per-Mission `remove-container` and `compose-down` operations returned
 code `0`. The build Compose project cleanup also returned code `0` and emitted
 Docker Compose's warning that there was no resource to remove for the
 build-only project. Image removal returned code `0`, reported the image
 untagged and deleted, and the scratch directory
-`C:\Users\iskan\AppData\Local\Temp\mission-docker-isolation-2evdOm` was
-removed. The final exact-resource checks found no matching containers, volumes,
+`<temp>/mission-docker-isolation-2evdOm` was removed. The final exact-resource
+checks found no matching containers, volumes,
 networks, or `factory-mission-isolation:*` images; the exact scratch-path check
 returned `False`.
 
@@ -62,12 +63,12 @@ returned `False`.
 
 | Scenario | Result | Observed evidence |
 |---|---|---|
-| Checkout read and Artifact write | PASS | Both Missions produced `result.json` in their distinct Artifact directories, reported their own markers (`alpha-marker` and `beta-marker`), and had `artifactsWritable: true`. |
+| Checkout read and Artifact write | PASS | Both Missions produced `result.json` and their other Artifacts inside their distinct Mission Artifact directories, reported their own markers (`alpha-marker` and `beta-marker`), and had `artifactsWritable: true`; `/tmp` was the ephemeral writable tmpfs. |
 | Checkout mutation blocked | PASS | Both reports had `missionWriteDenied: true`; alpha's checkout hash stayed `be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25` and beta's stayed `4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb`. |
 | Root filesystem mutation blocked | PASS | Both reports had `rootWriteDenied: true`; inspected containers had `ReadonlyRootfs: true`. |
 | Network disabled | PASS | Both reports had `networkDisabled: true`; inspected containers had `NetworkMode: none`. |
 | Secret absent | PASS | For both Missions, `noSecretEnvironment`, `noHostSecret`, and `noMountedSecret` were `true`; the observed environment keys excluded `FACTORY_TEST_SECRET`, and the host-only sentinel was absent from runtime output and `result.json`. |
-| Process and namespace isolation | PASS | Both reports had `pidIsOne: true`; inspection showed user `65532:65532`, `CapDrop: ALL`, `no-new-privileges:true`, empty `PidMode`, `IpcMode: private`, and only `bind:/mission` plus `bind:/artifacts` mounts. |
+| Process and namespace isolation | PASS | Both reports had `pidIsOne: true`; inspection showed user `65532:65532`, `CapDrop: ALL`, `no-new-privileges:true`, empty `PidMode`, `IpcMode: private`, an ephemeral writable `/tmp` tmpfs, and only `bind:/mission` plus `bind:/artifacts` mounts. |
 | Concurrent Mission separation | PASS | Alpha and beta ran as separate Missions with distinct container IDs, markers, checkout hashes, and Artifact directories; both completed all eight workload checks while their exact per-Mission cleanup operations returned code `0`. |
 
 ## Verdict
