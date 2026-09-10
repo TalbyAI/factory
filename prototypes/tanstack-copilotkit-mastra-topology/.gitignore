@@ -1,0 +1,8 @@
+node_modules/
+*.log
+npm-debug.log*
+.npm/
+coverage/
+dist/
+build/
+SELF-CHECK-REPORT.local.md
