@@ -99,13 +99,20 @@ async function main() {
 
   async function restartRun(runId, run) {
     activeRuns.set(runId, run);
+    let publishedError = false;
     try {
       const result = await run.restart({
-        outputWriter: chunk => chunk.type === 'workflow-finish' ? undefined : publishChunk(runId, chunk),
+        outputWriter: chunk => {
+          if (chunk.type === 'workflow.error') publishedError = true;
+          return chunk.type === 'workflow-finish' ? undefined : publishChunk(runId, chunk);
+        },
       });
       await publishChunk(runId, { type: 'workflow-finish', payload: { workflowStatus: result.status } });
       if (result.status === 'failed') throw result.error;
       return result;
+    } catch (error) {
+      if (!publishedError) await publishChunk(runId, { type: 'workflow.error', error: error.message });
+      throw error;
     } finally {
       activeRuns.delete(runId);
     }
@@ -118,7 +125,7 @@ async function main() {
       const run = await workflow.createRun({ runId });
       output = run.stream({ inputData: { runId }, closeOnSuspend: true });
       activeRuns.set(runId, output);
-      return await consume(runId, output);
+      void consume(runId, output).catch(() => {});
     } catch (error) {
       if (!output) await publishChunk(runId, { type: 'workflow.error', error: error.message });
       throw error;
@@ -131,10 +138,13 @@ async function main() {
       const workflow = mastra.getWorkflow('topology-workflow');
       const run = await workflow.createRun({ runId });
       const snapshot = await workflow.getWorkflowRunById(runId);
-      if (snapshot?.status === 'running') return await restartRun(runId, run);
+      if (snapshot?.status === 'running') {
+        void restartRun(runId, run).catch(() => {});
+        return;
+      }
       output = run.resumeStream({ step: 'operator-gate', resumeData });
       activeRuns.set(runId, output);
-      return await consume(runId, output);
+      void consume(runId, output).catch(() => {});
     } catch (error) {
       if (!output) await publishChunk(runId, { type: 'workflow.error', error: error.message });
       throw error;

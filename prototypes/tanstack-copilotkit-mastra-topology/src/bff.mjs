@@ -48,6 +48,7 @@ async function startRun(pool, res) {
       method: 'POST',
       headers: { authorization: `Bearer ${config.serviceToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ runId }),
+      signal: AbortSignal.timeout(5_000),
     });
     if (!upstream.ok) {
       await pool.query('update topology_factory.missions set status = $1 where run_id = $2', ['failed', runId]);
@@ -299,6 +300,7 @@ async function approve(pool, res, runId, body) {
         method: 'POST',
         headers: { authorization: `Bearer ${config.serviceToken}`, 'content-type': 'application/json' },
         body: JSON.stringify({ command: 'approve', idempotencyKey: body.idempotencyKey }),
+        signal: AbortSignal.timeout(10_000),
       });
       if (!upstream.ok) {
         try {

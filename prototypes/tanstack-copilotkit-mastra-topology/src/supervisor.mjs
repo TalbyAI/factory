@@ -63,6 +63,7 @@ for (const [name, file] of Object.entries(controls)) start(name, file);
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (req.headers.origin && req.headers.origin !== config.bffUrl) return json(res, 403, { error: 'origin not allowed' });
     res.setHeader('access-control-allow-origin', config.bffUrl);
     res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
     if (req.method === 'OPTIONS') return res.end();

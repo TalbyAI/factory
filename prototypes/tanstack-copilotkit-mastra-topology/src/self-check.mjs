@@ -384,6 +384,11 @@ async function main() {
       "insert into topology_factory.commands (idempotency_key, run_id, command, accepted) values ($1, $2, 'approve', false)",
       ['approve-abandoned', abandoned.runId],
     );
+    const forbiddenRestart = await fetch(`${supervisorUrl}/admin/restart/bff`, {
+      method: 'POST',
+      headers: { origin: 'https://evil.example' },
+    });
+    assert.equal(forbiddenRestart.status, 403);
     const abandonedRestart = await fetch(`${supervisorUrl}/admin/restart/bff`, { method: 'POST' });
     assert.equal(abandonedRestart.status, 202);
     await waitFor(`${bffUrl}/health`);
