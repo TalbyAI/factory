@@ -48,7 +48,11 @@ async function main() {
 
   async function publishChunk(runId, chunk) {
     const event = await appendEvent(pool, runId, chunk.type, { chunk });
-    for (const subscriber of [...(subscribers.get(runId) ?? [])]) writeOnce(runId, subscriber, event);
+    for (const subscriber of [...(subscribers.get(runId) ?? [])]) {
+      if (subscriber.closed) continue;
+      if (subscriber.replaying) subscriber.pending.set(event.sequence, event);
+      else writeOnce(runId, subscriber, event);
+    }
     return event;
   }
 
@@ -81,16 +85,19 @@ async function main() {
 
   async function streamEvents(res, runId, after) {
     sseHeaders(res);
-    const subscriber = { res, sequences: new Set(), closed: false };
+    const subscriber = { res, sequences: new Set(), pending: new Map(), replaying: true, closed: false };
     const list = subscribers.get(runId) ?? new Set();
     list.add(subscriber);
     subscribers.set(runId, list);
-    res.on('close', () => unsubscribe(runId, subscriber));
+    res.on('close', () => {
+      subscriber.closed = true;
+      unsubscribe(runId, subscriber);
+    });
     const events = await eventsAfter(pool, runId, after);
-    for (const event of events) {
-      writeOnce(runId, subscriber, event);
-      if (subscriber.closed) return;
-    }
+    const replay = new Map(events.map(event => [event.sequence, event]));
+    for (const [sequence, event] of subscriber.pending) replay.set(sequence, event);
+    for (const event of [...replay.values()].sort((left, right) => Number(left.sequence) - Number(right.sequence))) writeOnce(runId, subscriber, event);
+    subscriber.replaying = false;
   }
 
   const server = http.createServer(async (req, res) => {
