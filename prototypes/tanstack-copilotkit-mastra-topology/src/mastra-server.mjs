@@ -13,9 +13,22 @@ function terminal(chunk) {
   return chunk.type === 'workflow-finish' || chunk.type === 'workflow.error';
 }
 
-function closeSubscribers(runId) {
-  for (const subscriber of subscribers.get(runId) ?? []) subscriber.end();
-  subscribers.delete(runId);
+function unsubscribe(runId, subscriber) {
+  const list = subscribers.get(runId);
+  if (!list) return;
+  list.delete(subscriber);
+  if (!list.size) subscribers.delete(runId);
+}
+
+function writeOnce(runId, subscriber, event) {
+  if (subscriber.closed || subscriber.sequences.has(event.sequence)) return;
+  subscriber.sequences.add(event.sequence);
+  writeEvent(subscriber.res, event);
+  if (terminal(event.chunk)) {
+    subscriber.closed = true;
+    subscriber.res.end();
+    unsubscribe(runId, subscriber);
+  }
 }
 
 async function createServerState() {
@@ -35,8 +48,7 @@ async function main() {
 
   async function publishChunk(runId, chunk) {
     const event = await appendEvent(pool, runId, chunk.type, { chunk });
-    for (const subscriber of subscribers.get(runId) ?? []) writeEvent(subscriber, event);
-    if (terminal(chunk)) closeSubscribers(runId);
+    for (const subscriber of [...(subscribers.get(runId) ?? [])]) writeOnce(runId, subscriber, event);
     return event;
   }
 
@@ -69,13 +81,16 @@ async function main() {
 
   async function streamEvents(res, runId, after) {
     sseHeaders(res);
-    const events = await eventsAfter(pool, runId, after);
-    for (const event of events) writeEvent(res, event);
-    if (events.some(event => terminal(event.chunk))) return res.end();
+    const subscriber = { res, sequences: new Set(), closed: false };
     const list = subscribers.get(runId) ?? new Set();
-    list.add(res);
+    list.add(subscriber);
     subscribers.set(runId, list);
-    res.on('close', () => list.delete(res));
+    res.on('close', () => unsubscribe(runId, subscriber));
+    const events = await eventsAfter(pool, runId, after);
+    for (const event of events) {
+      writeOnce(runId, subscriber, event);
+      if (subscriber.closed) return;
+    }
   }
 
   const server = http.createServer(async (req, res) => {

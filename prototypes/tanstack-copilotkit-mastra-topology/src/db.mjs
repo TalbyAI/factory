@@ -51,13 +51,28 @@ export async function closePool(pool) {
 }
 
 export async function appendEvent(pool, runId, kind, payload) {
-  const { rows: [row] } = await pool.query(
-    `insert into topology_mastra.events (run_id, sequence, kind, payload)
-     values ($1, coalesce((select max(sequence) + 1 from topology_mastra.events where run_id = $1), 1), $2, $3)
-     returning run_id, sequence, kind, payload`,
-    [runId, kind, payload],
-  );
-  return eventFromRow(row);
+  const client = await pool.connect();
+  let inTransaction = false;
+  try {
+    await client.query('begin');
+    inTransaction = true;
+    // ponytail: hash collisions can serialize unrelated Runs; use a run-sequences table if that is measured.
+    await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [runId]);
+    const { rows: [row] } = await client.query(
+      `insert into topology_mastra.events (run_id, sequence, kind, payload)
+       values ($1, coalesce((select max(sequence) + 1 from topology_mastra.events where run_id = $1), 1), $2, $3)
+       returning run_id, sequence, kind, payload`,
+      [runId, kind, payload],
+    );
+    await client.query('commit');
+    inTransaction = false;
+    return eventFromRow(row);
+  } catch (error) {
+    if (inTransaction) await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function eventsAfter(pool, runId, after) {
