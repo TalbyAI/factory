@@ -5,6 +5,7 @@ import { config } from './config.mjs';
 import { json } from './protocol.mjs';
 
 const children = new Map();
+const restarts = new Map();
 
 function start(name, file) {
   const child = spawn(process.execPath, [fileURLToPath(new URL(file, import.meta.url))], { stdio: 'inherit' });
@@ -15,7 +16,7 @@ function start(name, file) {
   return child;
 }
 
-async function restart(name, file) {
+async function restartChild(name, file) {
   const child = children.get(name);
   if (child?.exitCode === null) {
     await new Promise(resolve => {
@@ -24,6 +25,15 @@ async function restart(name, file) {
     });
   }
   start(name, file);
+}
+
+function restart(name, file) {
+  const pending = restarts.get(name);
+  if (pending) return pending;
+  const next = restartChild(name, file);
+  restarts.set(name, next);
+  void next.then(() => restarts.delete(name), () => restarts.delete(name));
+  return next;
 }
 
 const controls = {

@@ -9,6 +9,10 @@ import { json, readJson, sseHeaders, writeEvent } from './protocol.mjs';
 const subscribers = new Map();
 const activeRuns = new Map();
 
+function authorizedService(req) {
+  return req.headers.authorization === `Bearer ${config.serviceToken}`;
+}
+
 function terminal(chunk) {
   return chunk.type === 'workflow-finish' || chunk.type === 'workflow.error';
 }
@@ -106,6 +110,7 @@ async function main() {
       const url = new URL(req.url, `http://${req.headers.host}`);
       if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
       if (req.method === 'POST' && url.pathname === '/runs') {
+        if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
         const { runId } = await readJson(req);
         if (typeof runId !== 'string' || !runId) return json(res, 400, { error: 'runId is required' });
         void startRun(runId).catch(error => publishChunk(runId, { type: 'workflow.error', error: error.message }));
@@ -113,6 +118,7 @@ async function main() {
       }
       const resume = url.pathname.match(/^\/runs\/([^/]+)\/resume$/);
       if (req.method === 'POST' && resume) {
+        if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
         const body = await readJson(req);
         if (body.command !== 'approve' || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey) return json(res, 400, { error: 'approve command and idempotencyKey are required' });
         const runId = decodeURIComponent(resume[1]);
@@ -121,6 +127,7 @@ async function main() {
       }
       const events = url.pathname.match(/^\/runs\/([^/]+)\/events$/);
       if (req.method === 'GET' && events) {
+        if (!authorizedService(req)) return json(res, 401, { error: 'service authorization required' });
         const after = Number(url.searchParams.get('after') ?? 0);
         if (!Number.isInteger(after) || after < 0) return json(res, 400, { error: 'after must be a non-negative integer' });
         return streamEvents(res, decodeURIComponent(events[1]), after);

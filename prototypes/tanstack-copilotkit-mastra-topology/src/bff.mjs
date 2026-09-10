@@ -25,12 +25,20 @@ async function startRun(pool, res) {
      values ($1, $2, 'running', 'pending')`,
     [runId, runId],
   );
-  const upstream = await fetch(`${mastraUrl}/runs`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${config.serviceToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ runId }),
-  });
-  if (!upstream.ok) return json(res, upstream.status, { error: 'Mastra did not start the Run' });
+  try {
+    const upstream = await fetch(`${mastraUrl}/runs`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${config.serviceToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ runId }),
+    });
+    if (!upstream.ok) {
+      await pool.query('update topology_factory.missions set status = $1 where run_id = $2', ['failed', runId]);
+      return json(res, upstream.status, { error: 'Mastra did not start the Run' });
+    }
+  } catch {
+    await pool.query('update topology_factory.missions set status = $1 where run_id = $2', ['failed', runId]);
+    return json(res, 502, { error: 'Mastra did not start the Run' });
+  }
   return json(res, 201, { runId });
 }
 
