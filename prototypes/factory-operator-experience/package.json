@@ -1,0 +1,10 @@
+{
+  "name": "factory-operator-experience-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prototype": "node server.mjs",
+    "check": "node --check server.mjs",
+    "self-check": "node self-check.mjs"
+  }
+}
