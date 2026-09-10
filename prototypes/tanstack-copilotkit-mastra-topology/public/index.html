@@ -36,6 +36,10 @@
       if (value.sequence <= state.sequence) return;
       state.sequence = value.sequence;
       if (value.kind === 'gate.pending') state.gate = 'pending';
+      if (value.kind === 'workflow-finish') {
+        if (value.chunk?.payload?.workflowStatus === 'success') state.gate = 'satisfied';
+        if (value.chunk?.payload?.workflowStatus === 'failed') state.gate = 'failed';
+      }
       view.events.textContent += `${JSON.stringify(value)}\n`;
       render();
       connect();

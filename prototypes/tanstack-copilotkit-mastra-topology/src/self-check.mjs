@@ -118,10 +118,10 @@ function semanticEvent(event) {
   return event;
 }
 
-async function nextEvents(runId, after, matches, timeout = 5_000) {
+async function nextEvents(runId, after, matches, timeout = 5_000, opened, controller = new AbortController()) {
   let cursor = after;
   let timedOut = false;
-  const controller = new AbortController();
+  let reader;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
@@ -131,7 +131,9 @@ async function nextEvents(runId, after, matches, timeout = 5_000) {
       const before = cursor;
       const response = await request(`/api/runs/${encodeURIComponent(runId)}/events?after=${cursor}`, { signal: controller.signal });
       assert.equal(response.status, 200);
-      const reader = response.body.getReader();
+      opened?.();
+      opened = undefined;
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       for (;;) {
@@ -144,8 +146,13 @@ async function nextEvents(runId, after, matches, timeout = 5_000) {
           const data = message.split('\n').find(line => line.startsWith('data: '));
           if (!data) continue;
           const event = semanticEvent(JSON.parse(data.slice(6)));
-          cursor = Math.max(cursor, event.sequence);
-          if (matches(event)) return event;
+          assert.ok(event.sequence > cursor, `SSE sequence must increase: ${event.sequence} after ${cursor}`);
+          cursor = event.sequence;
+          if (matches(event)) {
+            await reader.cancel().catch(() => {});
+            reader = undefined;
+            return event;
+          }
         }
         if (done) break;
       }
@@ -156,7 +163,23 @@ async function nextEvents(runId, after, matches, timeout = 5_000) {
     throw error;
   } finally {
     clearTimeout(timer);
+    await reader?.cancel().catch(() => {});
   }
+}
+
+function liveNextEvent(runId, after, matches) {
+  let markOpen;
+  const controller = new AbortController();
+  const opened = new Promise(resolve => { markOpen = resolve; });
+  const event = nextEvents(runId, after, matches, 5_000, markOpen, controller);
+  return {
+    opened,
+    event,
+    async cancel() {
+      controller.abort();
+      await event.catch(() => {});
+    },
+  };
 }
 
 async function scalar(pool, sql) {
@@ -222,6 +245,7 @@ async function main() {
     }
     assert.equal((await fetch(`${bffUrl}/health`)).status, 200);
     assert.equal((await fetch(`${mastraUrl}/health`)).status, 200);
+    assert.ok(!(await (await fetch(bffUrl)).text()).includes(config.serviceToken), 'BFF page must not expose the service token');
 
     const failedResumeId = 'missing-durable-run';
     await pool.query(
@@ -255,6 +279,29 @@ async function main() {
     assert.equal((await scalar(pool, 'select count(*) from topology_factory.effects')).value, '1');
     const stale = await approve(runId, 'approve-stale');
     assert.equal(stale.status, 409);
+
+    const effectWithoutFinish = await startRun();
+    const effectWithoutFinishPending = await nextEvents(effectWithoutFinish.runId, 0, event => event.kind === 'workflow.suspended');
+    await pool.query(
+      'insert into topology_factory.effects (idempotency_key, run_id) values ($1, $2)',
+      [`${effectWithoutFinish.runId}:publish`, effectWithoutFinish.runId],
+    );
+    const liveCompletion = liveNextEvent(
+      effectWithoutFinish.runId,
+      effectWithoutFinishPending.sequence,
+      event => event.kind === 'workflow.completed',
+    );
+    await liveCompletion.opened;
+    try {
+      const effectRecovery = await approve(effectWithoutFinish.runId, 'recover-effect-without-finish');
+      const effectRecoveryBody = await effectRecovery.text();
+      assert.equal(effectRecovery.status, 200, effectRecoveryBody);
+      assert.equal(JSON.parse(effectRecoveryBody).gate, 'satisfied');
+      assert.equal((await liveCompletion.event).runId, effectWithoutFinish.runId);
+      assert.equal(await countForRun(pool, 'effects', effectWithoutFinish.runId), 1);
+    } finally {
+      await liveCompletion.cancel();
+    }
 
     const recoveredRunId = 'failed-effect-before-confirmation';
     await pool.query(

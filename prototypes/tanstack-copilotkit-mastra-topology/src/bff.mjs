@@ -82,6 +82,7 @@ async function proxyEvents(req, res, runId, after) {
       connection: 'keep-alive',
     });
     const body = Readable.fromWeb(upstream.body);
+    body.on('error', () => {});
     for await (const chunk of body) {
       if (!res.write(chunk)) {
         await new Promise((resolve, reject) => {
@@ -102,11 +103,7 @@ async function proxyEvents(req, res, runId, after) {
     }
     res.end();
   } catch (error) {
-    if (downstreamClosed && (
-      error?.name === 'AbortError'
-      || error?.code === 'ERR_STREAM_PREMATURE_CLOSE'
-      || error?.code === 'ERR_STREAM_DESTROYED'
-    )) return;
+    if (downstreamClosed || res.destroyed) return;
     throw error;
   } finally {
     req.off('aborted', disconnect);
@@ -228,13 +225,14 @@ async function effectExists(pool, runId) {
 async function durableWorkflowStatus(runId) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2_000);
+  let reader;
   try {
     const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/events?after=0`, {
       headers: { authorization: `Bearer ${config.serviceToken}` },
       signal: controller.signal,
     });
     if (!upstream.ok || !upstream.body) throw new Error('Mastra event stream unavailable');
-    const reader = upstream.body.getReader();
+    reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     for (;;) {
@@ -254,21 +252,20 @@ async function durableWorkflowStatus(runId) {
           if (status === 'failed' || status === 'error') return 'failed';
         }
       }
-      if (done) throw new Error('Mastra did not persist a workflow finish');
+      if (done) return 'pending';
     }
+  } catch (error) {
+    if (error?.name === 'AbortError') return 'pending';
+    throw error;
   } finally {
     clearTimeout(timeout);
+    await reader?.cancel().catch(() => {});
     controller.abort();
   }
 }
 
 async function releaseApprovalIfSafe(pool, runId, idempotencyKey) {
-  try {
-    if (await effectExists(pool, runId)) return;
-  } catch {}
-  try {
-    await releaseApproval(pool, runId, idempotencyKey);
-  } catch {}
+  if (!await effectExists(pool, runId)) await releaseApproval(pool, runId, idempotencyKey);
 }
 
 async function failMission(pool, runId) {
@@ -287,20 +284,16 @@ async function approve(pool, res, runId, body) {
     if (reservation.state === 'pending') return json(res, 409, { error: 'Command is pending' });
     try {
       if (await effectExists(pool, runId)) {
-        let status;
-        try {
-          status = await durableWorkflowStatus(runId);
-        } catch {
-          await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
-          return json(res, 503, { error: 'Cannot verify durable workflow state; retry the command' });
+        const status = await durableWorkflowStatus(runId);
+        if (status === 'success') {
+          await confirmApproval(pool, runId, body.idempotencyKey);
+          return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
         }
-        if (status !== 'success') {
+        if (status === 'failed') {
           await failMission(pool, runId);
           await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
           return json(res, 503, { error: 'Durable workflow finished without success; retry recovery' });
         }
-        await confirmApproval(pool, runId, body.idempotencyKey);
-        return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
       }
       const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/resume`, {
         method: 'POST',
@@ -324,13 +317,17 @@ async function approve(pool, res, runId, body) {
         return json(res, upstream.status, { error: 'Mastra did not resume the Run' });
       }
       const status = await durableWorkflowStatus(runId);
-      if (status !== 'success') {
+      if (status === 'failed') {
         await failMission(pool, runId);
         await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
         return json(res, 503, { error: 'Durable workflow finished without success; retry recovery' });
       }
-      await confirmApproval(pool, runId, body.idempotencyKey);
-      return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+      if (status === 'success') {
+        await confirmApproval(pool, runId, body.idempotencyKey);
+        return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+      }
+      await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
+      return json(res, 503, { error: 'Mastra resumed without a durable workflow finish; retry the command' });
     } catch (error) {
       await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
       throw error;
