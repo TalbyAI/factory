@@ -199,7 +199,16 @@ export async function main() {
     const build = await runDocker(buildArgs, { cwd: prototypeRoot, env: buildEnv });
     assert.equal(build.code, 0, `Mission image build failed: ${build.stderr}`);
 
-    const reports = await Promise.all(missions.map((mission) => runMission({ image, composeFile, mission })));
+    const missionResults = await Promise.all(missions.map(async (mission) => {
+      try {
+        return { status: 'fulfilled', value: await runMission({ image, composeFile, mission }) };
+      } catch (reason) {
+        return { status: 'rejected', reason };
+      }
+    }));
+    const rejected = missionResults.find(({ status }) => status === 'rejected');
+    if (rejected) throw rejected.reason;
+    const reports = missionResults.map(({ value }) => value);
     assert.equal(reports[0].containerId === reports[1].containerId, false, 'Missions reused a container');
     assert.equal(reports[0].artifactDir === reports[1].artifactDir, false, 'Missions reused an artifact directory');
     for (const report of reports) {
