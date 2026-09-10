@@ -11,11 +11,14 @@
       "badges": ["Human Gate", "Ready"],
       "nextAction": "Approve the export scope gate",
       "nextActionSimulated": true,
+      "revisionValid": true,
+      "authority": "Exact Operator approval",
       "overview": "Add saved filters to customer exports without changing existing defaults.",
       "timeline": [{ "at": "2026-09-10T08:30:00Z", "label": "Human Gate requested", "detail": "Scope approval is required before implementation." }],
       "gates": [{ "id": "gate-export-scope", "name": "Export scope", "status": "Pending", "owner": "Product" }],
       "dependencies": [{ "id": "dep-export-contract", "name": "Export contract", "status": "Ready" }],
       "evidence": [{ "kind": "Issue", "label": "Customer export request", "status": "Linked" }],
+      "artifacts": [{ "id": "artifact-export-scope", "name": "Export scope Artifact", "status": "Ready" }],
       "drift": []
     },
     {
@@ -29,11 +32,14 @@
       "badges": ["Execution Frontier", "Blocked"],
       "nextAction": "Unblock the invoice fixture dependency",
       "nextActionSimulated": true,
+      "revisionValid": true,
+      "authority": "Autonomy Grant",
       "overview": "Implement reconciliation rules and verify them against invoice fixtures.",
       "timeline": [{ "at": "2026-09-10T08:05:00Z", "label": "Execution Frontier reached", "detail": "Rule validation is the next executable step." }],
       "gates": [{ "id": "gate-reconciliation-review", "name": "Reconciliation review", "status": "Ready", "owner": "Engineering" }],
       "dependencies": [{ "id": "dep-invoice-fixtures", "name": "Invoice fixtures", "status": "Blocked" }],
       "evidence": [{ "kind": "Test", "label": "Reconciliation rule suite", "status": "Pending" }],
+      "artifacts": [{ "id": "artifact-reconciliation", "name": "Reconciliation Artifact", "status": "Pending" }],
       "drift": []
     },
     {
@@ -47,11 +53,14 @@
       "badges": ["Running"],
       "nextAction": "Inspect the retry test evidence",
       "nextActionSimulated": true,
+      "revisionValid": true,
+      "authority": "Local inspection only",
       "overview": "Review the pull request that adjusts payment retry backoff.",
       "timeline": [{ "at": "2026-09-10T07:45:00Z", "label": "Review started", "detail": "Automated checks are still running." }],
       "gates": [{ "id": "gate-payment-review", "name": "Review approval", "status": "Pending", "owner": "Reviewer" }],
       "dependencies": [],
       "evidence": [{ "kind": "Pull Request", "label": "Payment retry changes", "status": "Checks running" }],
+      "artifacts": [{ "id": "artifact-payment-review", "name": "Payment retry review Artifact", "status": "Running" }],
       "drift": []
     },
     {
@@ -65,11 +74,14 @@
       "badges": ["Ready"],
       "nextAction": "Start the change run",
       "nextActionSimulated": true,
+      "revisionValid": true,
+      "authority": "Autonomy Grant",
       "overview": "Rotate staging credentials during the next approved maintenance window.",
       "timeline": [{ "at": "2026-09-10T07:20:00Z", "label": "Proposal validated", "detail": "All preflight evidence is available." }],
       "gates": [{ "id": "gate-staging-window", "name": "Maintenance window", "status": "Ready", "owner": "Operations" }],
       "dependencies": [],
       "evidence": [{ "kind": "Runbook", "label": "Credential rotation runbook", "status": "Verified" }],
+      "artifacts": [{ "id": "artifact-credential-rotation", "name": "Credential rotation Artifact", "status": "Ready" }],
       "drift": []
     },
     {
@@ -83,11 +95,14 @@
       "badges": ["Stalled", "Projection Drift"],
       "nextAction": "Reconcile the failed run with the projection",
       "nextActionSimulated": true,
+      "revisionValid": true,
+      "authority": "Exact Operator approval",
       "overview": "Prevent duplicate webhook deliveries after a worker restart.",
       "timeline": [{ "at": "2026-09-10T06:55:00Z", "label": "Run stalled", "detail": "The worker failed before publishing the final artifact." }],
       "gates": [{ "id": "gate-webhook-replay", "name": "Replay verification", "status": "Pending", "owner": "Engineering" }],
       "dependencies": [{ "id": "dep-worker-restart", "name": "Worker restart reproduction", "status": "Ready" }],
       "evidence": [{ "kind": "Log", "label": "Duplicate delivery trace", "status": "Captured" }],
+      "artifacts": [{ "id": "artifact-webhook-reconciliation", "name": "Webhook reconciliation Artifact", "status": "Drifted" }],
       "drift": [{ "kind": "Projection Drift", "source": "Run", "detail": "Run failed but the projection still reports the artifact as published." }]
     }
   ]

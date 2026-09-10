@@ -253,6 +253,9 @@
         'Inspect the retry test evidence': 'Inspeccionar la evidencia de pruebas de reintentos',
         'Start the change run': 'Iniciar la Run del cambio',
         'Reconcile the failed run with the projection': 'Reconciliar la Run fallida con la External Projection',
+        'Exact Operator approval': 'Aprobación exacta del Operator',
+        'Autonomy Grant': 'Autonomy Grant',
+        'Local inspection only': 'Sólo inspección local',
         'Add saved filters to customer exports without changing existing defaults.': 'Añadir filtros guardados a las exportaciones de clientes sin cambiar los valores predeterminados.',
         'Implement reconciliation rules and verify them against invoice fixtures.': 'Implementar reglas de conciliación y verificarlas con fixtures de facturas.',
         'Review the pull request that adjusts payment retry backoff.': 'Revisar el pull request que ajusta los intervalos de reintentos de pago.',
@@ -387,7 +390,7 @@
           ['Execution Frontier', mission.badges.includes('Execution Frontier') ? 'Dentro' : 'Fuera'],
           ['Missions hijas / dependencias', `${mission.children?.length ?? 0} / ${mission.dependencies.length}`],
           ['Gates', gateSummary],
-          ['Artifacts', String(mission.evidence.length)],
+          ['Artifacts', String(mission.artifacts.length)],
           ['Projection Drift', mission.drift.length ? `${mission.drift.length} detectado` : 'Sin drift']
         ];
         const drift = mission.drift.map((record) => `
@@ -402,18 +405,18 @@
       }
 
       function actionPolicy(mission) {
-        const inspectionOnly = mission.nextAction === 'Inspect the retry test evidence';
+        const inspectionOnly = mission.authority === 'Local inspection only';
         const approvingGate = mission.nextAction === 'Approve the export scope gate';
         // ponytail: Ready es la disponibilidad sembrada; una integración real exige evaluaciones Satisfied versionadas.
         const invalidGate = mission.gates.find((gate) => !['Satisfied', 'Ready'].includes(gate.status)
           && !(approvingGate && gate.status === 'Pending'));
-        const invalidRevision = mission.revisionValid === false;
+        const invalidRevision = mission.revisionValid !== true;
         const reason = mission.nextActionSimulated !== true ? 'La acción no está marcada como simulada'
-          : inspectionOnly ? '' : invalidRevision ? 'Revisión no vigente'
+          : invalidRevision ? 'Revisión no vigente' : inspectionOnly ? ''
           : invalidGate ? `Gate no válido: ${spanishCopy[invalidGate.name] ?? invalidGate.name} (${invalidGate.status})` : '';
         return {
           disabled: Boolean(reason),
-          authority: inspectionOnly ? 'Ninguna — inspección local' : 'Autonomy Grant o aprobación exacta del Operator',
+          authority: mission.authority,
           reason
         };
       }
@@ -432,7 +435,7 @@
             <p>Autoridad requerida: ${escapeHtml(policy.authority)}${policy.reason ? ` · ${escapeHtml(policy.reason)}` : ''}</p>
           </div>
           <div class="action-controls">
-            ${inspectionTabs.map((tab) => `<button class="action-button" type="button" data-tab="${tab}">Ver ${tab}</button>`).join('')}
+            ${inspectionTabs.map((tab) => `<button class="action-button" type="button" data-tab="${tab}">Simular inspección · Ver ${tab}</button>`).join('')}
             <button class="action-button primary" type="button" data-action="${escapeHtml(mission.nextAction)}" ${policy.disabled ? 'disabled' : ''}>Simular acción</button>
           </div>`;
       }
