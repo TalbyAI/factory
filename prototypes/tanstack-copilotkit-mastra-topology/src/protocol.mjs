@@ -18,5 +18,5 @@ export function writeEvent(res, event) {
 }
 
 export function eventFromRow(row) {
-  return { runId: row.run_id, sequence: row.sequence, kind: row.kind, ...row.payload };
+  return { ...row.payload, runId: row.run_id, sequence: row.sequence, kind: row.kind };
 }
