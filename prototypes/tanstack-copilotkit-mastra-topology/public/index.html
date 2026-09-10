@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Topology Factory</title>
+<body>
+  <button id="start">Iniciar Run</button>
+  <button id="approve">Aprobar Gate</button>
+  <button id="reconnect">Reconectar</button>
+  <button id="restart-bff">Reiniciar BFF</button>
+  <button id="restart-mastra">Reiniciar Mastra</button>
+  <dl>
+    <dt>runId</dt><dd id="run-id">—</dd>
+    <dt>Gate</dt><dd id="gate">—</dd>
+    <dt>Última secuencia</dt><dd id="sequence">0</dd>
+    <dt>Último comando</dt><dd id="command">—</dd>
+  </dl>
+  <pre id="events"></pre>
+  <script>
+    const operatorKey = 'prototype-operator-key';
+    const eventKinds = ['workflow-start', 'workflow-step-start', 'workflow-step-finish', 'workflow-step-suspended', 'workflow-finish', 'workflow.error', 'gate.pending'];
+    const state = { runId: '', gate: '—', sequence: 0, idempotencyKey: '', stream: null };
+    const view = Object.fromEntries(['run-id', 'gate', 'sequence', 'command', 'events'].map(id => [id, document.getElementById(id)]));
+
+    function render() {
+      view['run-id'].textContent = state.runId || '—';
+      view.gate.textContent = state.gate;
+      view.sequence.textContent = state.sequence;
+    }
+
+    function showCommand(value) {
+      view.command.textContent = typeof value === 'string' ? value : JSON.stringify(value);
+    }
+
+    function receive(event) {
+      const value = JSON.parse(event.data);
+      if (value.sequence <= state.sequence) return;
+      state.sequence = value.sequence;
+      if (value.kind === 'gate.pending') state.gate = 'pending';
+      view.events.textContent += `${JSON.stringify(value)}\n`;
+      render();
+      connect();
+    }
+
+    function connect() {
+      state.stream?.close();
+      if (!state.runId) return;
+      state.stream = new EventSource(`/api/runs/${encodeURIComponent(state.runId)}/events?after=${state.sequence}`);
+      eventKinds.forEach(kind => state.stream.addEventListener(kind, receive));
+    }
+
+    async function request(url, options) {
+      const response = await fetch(url, options);
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error || response.statusText);
+      return value;
+    }
+
+    document.getElementById('start').onclick = async () => {
+      try {
+        const value = await request('/api/runs', { method: 'POST', headers: { 'x-operator-key': operatorKey } });
+        state.runId = value.runId;
+        state.gate = 'pending';
+        state.sequence = 0;
+        state.idempotencyKey = crypto.randomUUID();
+        view.events.textContent = '';
+        render();
+        connect();
+      } catch (error) { showCommand(error.message); }
+    };
+
+    document.getElementById('approve').onclick = async () => {
+      if (!state.runId) return showCommand('Inicia una Run primero');
+      try {
+        const value = await request(`/api/runs/${encodeURIComponent(state.runId)}/commands`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-operator-key': operatorKey },
+          body: JSON.stringify({ command: 'approve', idempotencyKey: state.idempotencyKey }),
+        });
+        state.gate = value.gate;
+        render();
+        showCommand(value);
+      } catch (error) { showCommand(error.message); }
+    };
+
+    document.getElementById('reconnect').onclick = connect;
+    for (const name of ['bff', 'mastra']) document.getElementById(`restart-${name}`).onclick = async () => {
+      try { showCommand(await request(`http://127.0.0.1:4312/admin/restart/${name}`, { method: 'POST' })); }
+      catch (error) { showCommand(error.message); }
+    };
+    render();
+  </script>
+</body>
+</html>
