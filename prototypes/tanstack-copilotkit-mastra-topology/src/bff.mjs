@@ -200,7 +200,7 @@ async function main() {
       return json(res, 404, { error: 'not found' });
     } catch (error) {
       if (!res.headersSent) return json(res, 500, { error: error.message });
-      res.end();
+      res.destroy();
     }
   });
   server.listen(config.bffPort, '127.0.0.1');
