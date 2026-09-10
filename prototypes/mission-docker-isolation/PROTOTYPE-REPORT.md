@@ -11,13 +11,16 @@ behind?
 
 ## Environment observed
 
-The successful Task 3 runtime evidence reported:
+The successful runtime evidence captured these commands and outputs:
 
-| Component | Observed value |
+| Command | Observed output |
 |---|---|
-| Node | `v24.14.1` |
-| Docker Engine | `29.5.3 linux/amd64` |
-| Docker Compose | `Docker Compose version v5.1.4` |
+| `node --version` | `v24.14.1` |
+| `docker version` | Docker Engine `29.5.3 linux/amd64` (client `29.5.3 windows/amd64`, context `desktop-linux`) |
+| `docker compose version` | `Docker Compose version v5.1.4` |
+
+The harness records each command's exit code, stdout, and stderr under
+`versions` in the ignored `PROTOTYPE-EVIDENCE.local.json` file.
 
 ## Command and cleanup evidence
 
@@ -28,36 +31,36 @@ The successful run used `npm run prototype` from
 > prototype
 > node src/harness.mjs
 
-{"image":"factory-mission-isolation:mtvp6tbg-bb1996d286","missions":[{"missionId":"alpha","marker":"alpha-marker","containerId":"2e4c35810d7123383638075db047b8a55b9c534d563bc9604c2ed836419cd296","checkoutHash":"be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25","artifactDir":"<temp>/mission-docker-isolation-2evdOm/alpha/artifacts"},{"missionId":"beta","marker":"beta-marker","containerId":"108d5bd7a4b2fd3277fb85b1e51949d7f280ef5c299a20ec9317175e5a2e768c","checkoutHash":"4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb","artifactDir":"<temp>/mission-docker-isolation-2evdOm/beta/artifacts"}],"evidenceFile":"prototypes/mission-docker-isolation/PROTOTYPE-EVIDENCE.local.json","cleaned":true}
+{"image":"factory-mission-isolation:mtvz21iu-1450ebfd52","missions":[{"missionId":"alpha","marker":"alpha-marker","containerId":"19757ddceeaf25074239d074e583f889bcb1b00bdb8df7fc686841b2ccd0c1d0","checkoutHash":"be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25","artifactDir":"<temp>/mission-docker-isolation-ZWMWoL/alpha/artifacts"},{"missionId":"beta","marker":"beta-marker","containerId":"652f11afa863e247913fb286c9fd7d4774dd63a10612bd831cfb989f80df328b","checkoutHash":"4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb","artifactDir":"<temp>/mission-docker-isolation-ZWMWoL/beta/artifacts"}],"evidenceFile":"prototypes/mission-docker-isolation/PROTOTYPE-EVIDENCE.local.json","cleaned":true}
 ```
 
 The ignored local evidence recorded one image for both Missions:
 
-- Image tag: `factory-mission-isolation:mtvp6tbg-bb1996d286`
+- Image tag: `factory-mission-isolation:mtvz21iu-1450ebfd52`
 - Image digest observed during inspection and removal:
-  `sha256:09e76a55e426b8ba1350b31bdaff2d42b519658c3ff53183748287d56b998f9f`
+  `sha256:d1e69806cae2f5c72feacb837492abd3f31d25c3bb3dbb5507fb502d53e4bbff`
 - `alpha`: container
-  `2e4c35810d7123383638075db047b8a55b9c534d563bc9604c2ed836419cd296`,
+  `19757ddceeaf25074239d074e583f889bcb1b00bdb8df7fc686841b2ccd0c1d0`,
   checkout hash before and after
   `be22418abd20c4df7561552477cc5c1429c7d022513047d8a0f6e769da58cd25`,
   Artifact directory
-  `<temp>/mission-docker-isolation-2evdOm/alpha/artifacts`
+  `<temp>/mission-docker-isolation-ZWMWoL/alpha/artifacts`
 - `beta`: container
-  `108d5bd7a4b2fd3277fb85b1e51949d7f280ef5c299a20ec9317175e5a2e768c`,
+  `652f11afa863e247913fb286c9fd7d4774dd63a10612bd831cfb989f80df328b`,
   checkout hash before and after
   `4ec8e63faedd5c82e042fa89081641b9a5da0bac4c2cfd9655c9981ca7e9c3fb`,
   Artifact directory
-  `<temp>/mission-docker-isolation-2evdOm/beta/artifacts`
+  `<temp>/mission-docker-isolation-ZWMWoL/beta/artifacts`
 
 Both per-Mission `remove-container` and `compose-down` operations returned
 code `0`. The build Compose project cleanup also returned code `0` and emitted
 Docker Compose's warning that there was no resource to remove for the
 build-only project. Image removal returned code `0`, reported the image
 untagged and deleted, and the scratch directory
-`<temp>/mission-docker-isolation-2evdOm` was removed. The final exact-resource
-checks found no matching containers, volumes,
-networks, or `factory-mission-isolation:*` images; the exact scratch-path check
-returned `False`.
+`<temp>/mission-docker-isolation-ZWMWoL` was removed. The final exact-resource
+enumeration found no matching containers, listeners, secrets, volumes,
+networks, or the exact image tag; the exact scratch-path check returned
+`False`.
 
 ## Scenario evidence
 

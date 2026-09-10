@@ -24,12 +24,14 @@ La configuración candidata del contenedor será:
 - `cap_drop: ALL` y `no-new-privileges`;
 - límites de memoria, CPU y PIDs;
 - `/tmp` como `tmpfs` efímero;
-- checkout montado en `/mission` como sólo lectura;
-- un único directorio de salida montado en `/artifacts` como escritura;
+- Sólo se montan los directorios del host propios de cada Mission: el checkout
+  en `/mission:ro` y el directorio de Artifacts en `/artifacts:rw`; no se montan
+  otras rutas del host;
 - sólo `MISSION_ID` y `SCENARIO` como variables explícitas.
 
-El controlador no pasará secretos, no montará el host ni el Docker socket y
-calculará el SHA-256 de cada Artifact producido. La identidad de cada
+El controlador no pasará secretos ni montará el Docker socket; sólo montará los
+directorios del host propios de cada Mission y calculará el SHA-256 de cada
+Artifact producido. La identidad de cada
 contenedor y la configuración efectiva se conservarán en la evidencia.
 
 ## Frontera de confianza
@@ -66,8 +68,10 @@ decisión de sandboxing.
    volúmenes persistentes ni comandos globales de Docker.
 
 El self-check será un único script assertivo, sin framework de pruebas. Cada
-ejecución producirá un manifest local con MissionId, containerId, configuración
-observada, estado de salida, lista de Artifacts y hashes.
+ejecución, incluso si falla, producirá un manifest local con MissionId,
+containerId, configuración observada, estado de salida, lista de Artifacts y
+hashes; los fallos incluirán el error y los resultados disponibles de build,
+Missions y cleanup.
 
 ## Estructura y ejecución
 
@@ -90,8 +94,8 @@ conexión a GitHub, Azure DevOps, PostgreSQL ni servicios externos.
   la frontera de confianza declarada.
 - El Artifact de cada Mission tiene un hash reproducible y sólo aparece en su
   directorio de salida.
-- No quedan contenedores, listeners, secretos ni volúmenes del prototipo tras
-  la limpieza.
+- No quedan contenedores, listeners, secretos, volúmenes, redes ni imágenes del
+  prototipo tras la limpieza.
 - El README permite repetir la comprobación en un Docker local limpio.
 - El informe distingue evidencia observada de garantías no demostradas.
 

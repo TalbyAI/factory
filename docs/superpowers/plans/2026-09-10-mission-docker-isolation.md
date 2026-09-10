@@ -12,8 +12,9 @@
 
 - Prototype files live under prototypes/mission-docker-isolation/ and never change Factory runtime code.
 - Mission code and checkout contents are untrusted; Docker Engine, host, kernel, and controller are trusted.
-- No Docker socket, host PID/IPC namespace, host network, host filesystem mount, or secret reaches a Mission.
-- The only Mission bind mounts are /mission:ro and /artifacts:rw; no named or anonymous volumes are used.
+- No Docker socket, host PID/IPC namespace, host network, or secret reaches a Mission.
+- Only the per-Mission host directories are mounted: the checkout at `/mission:ro` and the Artifact directory at `/artifacts:rw`; no other host filesystem paths are mounted.
+- No named or anonymous volumes are used.
 - The Mission runs as UID/GID 65532:65532 with network_mode none, read-only rootfs, cap_drop ALL, no-new-privileges, /tmp tmpfs, 128 MiB memory, 1 CPU, and 64 PIDs.
 - The controller passes only MISSION_ID and SCENARIO through Compose.
 - The assert-based self-check is the prototype's evidence mechanism; no separate test framework is added.
@@ -156,13 +157,14 @@ git commit -m "feat(prototype): add untrusted Mission workload"
 - sha256File(file) returns lowercase SHA-256 hex.
 - inspectContainer(name) returns the first object from docker inspect.
 - prepareMission(scratchRoot, missionId) returns { id, checkoutDir, artifactDir, checkoutHash }.
-- assertContainerSecurity(container) asserts the effective Docker profile.
+- assertContainerSecurity(container, mission) asserts the effective Docker profile and per-Mission mount sources.
 - runMission({ image, composeFile, mission }) returns one parsed evidence object.
 
 - [ ] **Step 1: Implement runDocker with execFile.**
 
 Use execFile('docker', args, ...) with shell false, windowsHide true, a 4 MiB
-maxBuffer, timeout 30 seconds, and environment { ...process.env, ...env }.
+maxBuffer, timeout 30 seconds by default, and environment { ...process.env, ...env }.
+Allow a command-specific timeout for the image build.
 Return nonzero results to the caller instead of hiding them.
 
 - [ ] **Step 2: Implement runMission.**
@@ -196,6 +198,8 @@ assert.deepEqual(
 Then parse result.json, assert every workload check is true, compare the
 checkout hash before and after, reject the host sentinel in output, capture the
 container ID, and clean the exact container and Compose project in finally.
+Enumerate the remaining prototype containers, published listeners, secrets,
+volumes, networks, and image tag after cleanup and assert that none remain.
 
 - [ ] **Step 3: Implement main.**
 
@@ -206,8 +210,9 @@ Promise.all with distinct project and container names.
 
 Assert both reports preserve their own markers and hashes, have distinct
 container IDs and output directories, and contain no host sentinel. Write the
-complete evidence object to the ignored PROTOTYPE-EVIDENCE.local.json and print
-a compact JSON summary.
+complete evidence object to the ignored PROTOTYPE-EVIDENCE.local.json on both
+success and failure; failure evidence includes the error and available build,
+Mission, and cleanup results. Print a compact JSON summary on success.
 
 Finally, remove exact named containers, exact Compose projects, the exact image
 tag, and the exact scratch directory. Do not use docker system prune, wildcard
@@ -220,8 +225,9 @@ npm run prototype
 ~~~
 
 Expected: exit 0, two distinct container IDs, all workload and security
-assertions passing, and no remaining prototype containers or volumes. Correct
-only the minimal failing cause and rerun the same command if it fails.
+assertions passing, and no remaining prototype containers, listeners, secrets,
+volumes, networks, or image tag. Correct only the minimal failing cause and
+rerun the same command if it fails.
 
 - [ ] **Step 5: Commit.**
 
@@ -284,10 +290,11 @@ Use these exact sections:
 ## Trust boundary and limits
 ~~~
 
-Fill the result cells only from the successful run. Record exact Node, Docker
-Engine, Compose, image, container, and cleanup observations; do not claim
-protection against a compromised Docker host or semantic validation of
-production Artifacts.
+Fill the result cells only from the successful run. Record the exact outputs of
+`node --version`, `docker version`, and `docker compose version`, plus exact
+image, container, and cleanup observations; the harness stores those command
+results in the local evidence. Do not claim protection against a compromised
+Docker host or semantic validation of production Artifacts.
 
 - [ ] **Step 3: Run final checks.**
 
@@ -329,6 +336,8 @@ prototype harness, README, and report in the branch delta.
   covers reproducibility and the observed verdict.
 - Placeholder scan: no TODO, TBD, or unspecified implementation choice remains.
   Runtime-dependent report values must come from the successful command.
+- Failure evidence: every execution writes the local manifest; failed executions
+  include the error and any available exit and cleanup results.
 - Interface consistency: Compose provides the image and environment inputs, the
   Dockerfile provides /prototype/src/mission.mjs, the workload writes
   /artifacts/result.json, and the controller inspects the named container.

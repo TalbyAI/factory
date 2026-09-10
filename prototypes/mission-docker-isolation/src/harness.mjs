@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const DOCKER_MAX_BUFFER = 4 * 1024 * 1024;
 const DOCKER_TIMEOUT = 30_000;
+const DOCKER_BUILD_TIMEOUT = 300_000;
 const HOST_SENTINEL = 'factory-test-secret-host-only';
 const SOURCE_FILE = join(dirname(fileURLToPath(import.meta.url)), '..');
 const EXPECTED_MISSION_CHECKS = Object.freeze([
@@ -21,15 +22,15 @@ const EXPECTED_MISSION_CHECKS = Object.freeze([
   'pidIsOne',
 ]);
 
-export function runDocker(args, options = {}) {
+function runProcess(executable, args, options = {}) {
   return new Promise((resolveResult) => {
-    execFile('docker', args, {
+    execFile(executable, args, {
       cwd: options.cwd,
       env: { ...process.env, ...(options.env ?? {}) },
       shell: false,
       windowsHide: true,
       maxBuffer: DOCKER_MAX_BUFFER,
-      timeout: DOCKER_TIMEOUT,
+      timeout: options.timeout ?? DOCKER_TIMEOUT,
     }, (error, stdout = '', stderr = '') => {
       const code = error
         ? (Number.isInteger(error.code) && error.code !== 0 ? error.code : 1)
@@ -43,8 +44,30 @@ export function runDocker(args, options = {}) {
   });
 }
 
+export function runDocker(args, options = {}) {
+  return runProcess('docker', args, options);
+}
+
 export async function sha256File(file) {
   return createHash('sha256').update(await readFile(file)).digest('hex');
+}
+
+function outputLines(stdout) {
+  const output = String(stdout).trim();
+  return output === '' ? [] : output.split(/\r?\n/);
+}
+
+function belongsToProject(name, projectName) {
+  return name === projectName
+    || name.startsWith(`${projectName}-`)
+    || name.startsWith(`${projectName}_`);
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message, stack: error.stack };
+  }
+  return { message: String(error) };
 }
 
 function isContained(root, target) {
@@ -89,7 +112,14 @@ export async function prepareMission(scratchRoot, missionId) {
   await mkdir(artifactDir, { recursive: true });
   await writeFile(markerPath, `${id}-marker`, 'utf8');
 
-  return { id, checkoutDir, artifactDir, checkoutHash: await sha256File(markerPath) };
+  const resolvedCheckoutDir = await realpath(checkoutDir);
+  const resolvedArtifactDir = await realpath(artifactDir);
+  return {
+    id,
+    checkoutDir: resolvedCheckoutDir,
+    artifactDir: resolvedArtifactDir,
+    checkoutHash: await sha256File(join(resolvedCheckoutDir, 'marker.txt')),
+  };
 }
 
 export function assertContainerSecurity(container, mission) {
@@ -131,6 +161,74 @@ function missionEnvironment(image, mission) {
     MISSION_ID: mission.id,
     SCENARIO: mission.scenario ?? mission.id,
     FACTORY_TEST_SECRET: HOST_SENTINEL,
+  };
+}
+
+async function captureToolVersions(cwd) {
+  const node = await runProcess(process.execPath, ['--version'], { cwd });
+  assert.equal(node.code, 0, `node --version failed: ${node.stderr}`);
+
+  const docker = await runDocker(['version'], { cwd });
+  assert.equal(docker.code, 0, `docker version failed: ${docker.stderr}`);
+
+  const compose = await runDocker(['compose', 'version'], { cwd });
+  assert.equal(compose.code, 0, `docker compose version failed: ${compose.stderr}`);
+
+  return {
+    node: { command: 'node --version', ...node },
+    docker: { command: 'docker version', ...docker },
+    compose: { command: 'docker compose version', ...compose },
+  };
+}
+
+async function collectPostCleanupState(projectNames, image) {
+  const containersResult = await runDocker(['ps', '-a', '--format', '{{.Names}}\t{{.Ports}}']);
+  assert.equal(containersResult.code, 0, `Docker container enumeration failed: ${containersResult.stderr}`);
+  const containers = outputLines(containersResult.stdout)
+    .map((line) => {
+      const [name, ...portParts] = line.split('\t');
+      return { name, ports: portParts.join('\t') };
+    })
+    .filter(({ name }) => projectNames.some((projectName) => belongsToProject(name, projectName)));
+
+  const volumesResult = await runDocker(['volume', 'ls', '--format', '{{.Name}}']);
+  assert.equal(volumesResult.code, 0, `Docker volume enumeration failed: ${volumesResult.stderr}`);
+  const volumes = outputLines(volumesResult.stdout)
+    .filter((name) => projectNames.some((projectName) => belongsToProject(name, projectName)))
+    .sort();
+
+  const networksResult = await runDocker(['network', 'ls', '--format', '{{.Name}}']);
+  assert.equal(networksResult.code, 0, `Docker network enumeration failed: ${networksResult.stderr}`);
+  const networks = outputLines(networksResult.stdout)
+    .filter((name) => projectNames.some((projectName) => belongsToProject(name, projectName)))
+    .sort();
+
+  const secretsResult = await runDocker(['secret', 'ls', '--format', '{{.Name}}']);
+  const secretsUnavailable = /not a swarm manager/i.test(`${secretsResult.stdout}\n${secretsResult.stderr}`);
+  assert.equal(
+    secretsResult.code === 0 || secretsUnavailable,
+    true,
+    `Docker secret enumeration failed: ${secretsResult.stderr}`,
+  );
+  const secrets = secretsResult.code === 0
+    ? outputLines(secretsResult.stdout)
+      .filter((name) => projectNames.some((projectName) => belongsToProject(name, projectName)))
+      .sort()
+    : [];
+
+  const imagesResult = await runDocker([
+    'image', 'ls', '--filter', `reference=${image}`, '--format', '{{.Repository}}:{{.Tag}}',
+  ]);
+  assert.equal(imagesResult.code, 0, `Docker image enumeration failed: ${imagesResult.stderr}`);
+  const images = outputLines(imagesResult.stdout).filter((name) => name === image).sort();
+
+  return {
+    containers: containers.sort((left, right) => left.name.localeCompare(right.name)),
+    listeners: containers.filter(({ ports }) => ports !== '' && ports !== '<none>'),
+    secrets,
+    volumes,
+    networks,
+    images,
   };
 }
 
@@ -259,18 +357,28 @@ export async function main() {
   const projectPrefix = `mission-isolation-${suffix}`;
   const buildProject = `${projectPrefix}-build`;
   const cleanup = {};
-  let evidence;
+  const hostSecretPath = join(scratchRoot, 'host-secret.txt');
+  const evidence = {
+    generatedAt: new Date().toISOString(),
+    image,
+    composeFile,
+    hostSecretPath,
+    versions: null,
+    build: null,
+    missions: [],
+  };
+  let missions = [];
   let failure;
 
   try {
-    const hostSecretPath = join(scratchRoot, 'host-secret.txt');
+    evidence.versions = await captureToolVersions(prototypeRoot);
     await writeFile(hostSecretPath, HOST_SENTINEL, 'utf8');
 
     const [alpha, beta] = await Promise.all([
       prepareMission(scratchRoot, 'alpha'),
       prepareMission(scratchRoot, 'beta'),
     ]);
-    const missions = [
+    missions = [
       { ...alpha, scenario: 'alpha', projectName: `${projectPrefix}-alpha`, containerName: `${projectPrefix}-alpha-container` },
       { ...beta, scenario: 'beta', projectName: `${projectPrefix}-beta`, containerName: `${projectPrefix}-beta-container` },
     ];
@@ -278,6 +386,7 @@ export async function main() {
     const buildArgs = ['compose', '--ansi', 'never', '-f', basename(composeFile), '-p', buildProject, 'build', 'mission'];
     const buildEnv = { MISSION_IMAGE: image, MISSION_ID: 'build', SCENARIO: 'build' };
     const build = await runDocker(buildArgs, { cwd: prototypeRoot, env: buildEnv });
+    evidence.build = { command: { executable: 'docker', args: buildArgs, cwd: prototypeRoot }, ...build };
     assert.equal(build.code, 0, `Mission image build failed: ${build.stderr}`);
 
     const missionResults = await Promise.allSettled(
@@ -303,6 +412,17 @@ export async function main() {
         cleanupFailures.push(new Error(`Mission ${mission.id} cleanup threw: ${settlement.reason.cleanupError.message}`));
       }
     }
+    evidence.missions = missionResults.map((settlement, index) => {
+      if (settlement.status === 'fulfilled') return settlement.value;
+      const reason = settlement.reason;
+      return {
+        missionId: missions[index].id,
+        scenario: missions[index].scenario,
+        error: serializeError(reason),
+        cleanup: Array.isArray(reason?.cleanup) ? reason.cleanup : [],
+        ...(reason?.cleanupError ? { cleanupError: serializeError(reason.cleanupError) } : {}),
+      };
+    });
     const rejected = missionResults.find(({ status }) => status === 'rejected');
     if (rejected) {
       if (cleanupFailures.length > 0 && rejected.reason && typeof rejected.reason === 'object') {
@@ -321,14 +441,6 @@ export async function main() {
       assert.ok(report.cleanup.every(({ code }) => code === 0), `Mission cleanup failed for ${report.missionId}`);
     }
 
-    evidence = {
-      generatedAt: new Date().toISOString(),
-      image,
-      composeFile,
-      hostSecretPath,
-      build: { command: { executable: 'docker', args: buildArgs, cwd: prototypeRoot }, ...build },
-      missions: reports,
-    };
   } catch (error) {
     failure = error;
   } finally {
@@ -354,14 +466,29 @@ export async function main() {
     }
   }
 
-  if (evidence) {
-    evidence.cleanup = cleanup;
-    await writeFile(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+  try {
+    const resources = await collectPostCleanupState(
+      [...missions.map(({ projectName }) => projectName), buildProject],
+      image,
+    );
+    cleanup.resources = resources;
+    assert.deepEqual(resources.containers, [], 'Prototype containers remained after cleanup');
+    assert.deepEqual(resources.listeners, [], 'Prototype listeners remained after cleanup');
+    assert.deepEqual(resources.secrets, [], 'Prototype secrets remained after cleanup');
+    assert.deepEqual(resources.volumes, [], 'Prototype volumes remained after cleanup');
+    assert.deepEqual(resources.networks, [], 'Prototype networks remained after cleanup');
+    assert.deepEqual(resources.images, [], 'Prototype images remained after cleanup');
+  } catch (error) {
+    cleanup.resources ??= { error: serializeError(error) };
+    if (!failure) failure = error;
   }
 
   if (!failure && cleanup.buildProject.code !== 0) failure = new Error(`Build Compose cleanup failed: ${cleanup.buildProject.stderr}`);
   if (!failure && cleanup.image.code !== 0) failure = new Error(`Image cleanup failed: ${cleanup.image.stderr}`);
   if (!failure && cleanup.scratch.removed !== true) failure = new Error('Scratch directory cleanup failed');
+  if (failure) evidence.failure = serializeError(failure);
+  evidence.cleanup = cleanup;
+  await writeFile(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
   if (failure) throw failure;
 
   process.stdout.write(`${JSON.stringify({
