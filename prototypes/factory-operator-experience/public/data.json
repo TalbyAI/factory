@@ -5,20 +5,46 @@
       "title": "Add customer export filters",
       "workType": "Feature",
       "state": "Open",
-      "situation": "Waiting on Human Gate",
+      "situation": "Waiting",
       "attentionRank": 1,
-      "run": { "status": "Ready", "attention": "waiting" },
-      "badges": ["Human Gate", "Ready"],
+      "revisionId": "mission-feature-gate-r1",
+      "run": null,
+      "badges": ["Human Gate"],
+      "children": ["mission-feature-implementation", "mission-pr-review"],
       "nextAction": "Approve the export scope gate",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Exact Operator approval",
+      "frontier": { "status": "waiting", "reason": "Human Gate gate-export-scope is Pending." },
       "overview": "Add saved filters to customer exports without changing existing defaults.",
-      "timeline": [{ "at": "2026-09-10T08:30:00Z", "label": "Human Gate requested", "detail": "Scope approval is required before implementation." }],
-      "gates": [{ "id": "gate-export-scope", "name": "Export scope", "status": "Pending", "owner": "Product" }],
-      "dependencies": [{ "id": "dep-export-contract", "name": "Export contract", "status": "Ready" }],
-      "evidence": [{ "kind": "Issue", "label": "Customer export request", "status": "Linked" }],
-      "artifacts": [{ "id": "artifact-export-scope", "name": "Export scope Artifact", "status": "Ready" }],
+      "timeline": [{
+        "at": "2026-09-10T08:30:00Z",
+        "label": "Human Gate requested",
+        "detail": "Scope approval is required before implementation.",
+        "refs": [
+          { "type": "Gate", "id": "gate-export-scope" },
+          { "type": "Artifact", "id": "artifact-export-scope", "revisionId": "artifact-export-scope-r1" },
+          { "type": "Dependency", "id": "dep-export-contract" }
+        ]
+      }],
+      "gates": [{
+        "id": "gate-export-scope",
+        "kind": "Human Gate",
+        "name": "Export scope",
+        "status": "Pending",
+        "owner": "Product",
+        "evidence": { "evidenceId": "evidence-export-scope", "revisionId": "evidence-export-scope-r1", "appliesToRevision": "mission-feature-gate-r1" }
+      }],
+      "dependencies": [{ "id": "dep-export-contract", "name": "Export contract", "status": "Satisfied" }],
+      "evidence": [{
+        "id": "evidence-export-scope",
+        "kind": "Issue",
+        "label": "Customer export request",
+        "status": "Linked",
+        "revisionId": "evidence-export-scope-r1",
+        "refs": [{ "type": "Artifact", "id": "artifact-export-scope", "revisionId": "artifact-export-scope-r1" }]
+      }],
+      "artifacts": [{ "id": "artifact-export-scope", "name": "Export scope Artifact", "revisionId": "artifact-export-scope-r1", "status": "Available", "immutable": true }],
       "drift": []
     },
     {
@@ -26,20 +52,49 @@
       "title": "Implement invoice reconciliation",
       "workType": "Feature Implementation",
       "state": "Open",
-      "situation": "Blocked dependency",
-      "attentionRank": 2,
-      "run": { "status": "Running", "attention": "blocked" },
-      "badges": ["Execution Frontier", "Blocked"],
+      "situation": "Waiting",
+      "attentionRank": 3,
+      "revisionId": "mission-feature-implementation-r1",
+      "parentId": "mission-feature-gate",
+      "run": null,
+      "badges": ["Blocked"],
       "nextAction": "Unblock the invoice fixture dependency",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Autonomy Grant",
+      "frontier": { "status": "blocked", "reason": "Mission dependency dep-invoice-fixtures is Blocked; it is not eligible." },
       "overview": "Implement reconciliation rules and verify them against invoice fixtures.",
-      "timeline": [{ "at": "2026-09-10T08:05:00Z", "label": "Execution Frontier reached", "detail": "Rule validation is the next executable step." }],
-      "gates": [{ "id": "gate-reconciliation-review", "name": "Reconciliation review", "status": "Ready", "owner": "Engineering" }],
+      "timeline": [{
+        "at": "2026-09-10T08:05:00Z",
+        "label": "Execution Frontier evaluated",
+        "detail": "The blocked invoice fixture dependency prevents this Mission from becoming eligible.",
+        "refs": [
+          { "type": "Gate", "id": "gate-reconciliation-review" },
+          { "type": "Artifact", "id": "artifact-reconciliation", "revisionId": "artifact-reconciliation-r1" },
+          { "type": "Dependency", "id": "dep-invoice-fixtures" }
+        ]
+      }],
+      "gates": [{
+        "id": "gate-reconciliation-review",
+        "kind": "Mission Gate",
+        "name": "Reconciliation review",
+        "status": "Satisfied",
+        "owner": "Engineering",
+        "evidence": { "evidenceId": "evidence-reconciliation", "revisionId": "evidence-reconciliation-r1", "appliesToRevision": "mission-feature-implementation-r1" }
+      }],
       "dependencies": [{ "id": "dep-invoice-fixtures", "name": "Invoice fixtures", "status": "Blocked" }],
-      "evidence": [{ "kind": "Test", "label": "Reconciliation rule suite", "status": "Pending" }],
-      "artifacts": [{ "id": "artifact-reconciliation", "name": "Reconciliation Artifact", "status": "Pending" }],
+      "evidence": [{
+        "id": "evidence-reconciliation",
+        "kind": "Test",
+        "label": "Reconciliation rule suite",
+        "status": "Pending",
+        "revisionId": "evidence-reconciliation-r1",
+        "refs": [
+          { "type": "Artifact", "id": "artifact-reconciliation", "revisionId": "artifact-reconciliation-r1" },
+          { "type": "Dependency", "id": "dep-invoice-fixtures" }
+        ]
+      }],
+      "artifacts": [{ "id": "artifact-reconciliation", "name": "Reconciliation Artifact", "revisionId": "artifact-reconciliation-r1", "status": "Draft", "immutable": true }],
       "drift": []
     },
     {
@@ -48,19 +103,48 @@
       "workType": "Pull Request Review",
       "state": "Open",
       "situation": "Running",
-      "attentionRank": 3,
-      "run": { "status": "Running", "attention": "normal" },
+      "attentionRank": 4,
+      "revisionId": "mission-pr-review-r1",
+      "parentId": "mission-feature-gate",
+      "run": { "id": "run-payment-retry-review", "status": "Running", "attention": "normal" },
       "badges": ["Running"],
       "nextAction": "Inspect the retry test evidence",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Local inspection only",
+      "frontier": { "status": "waiting", "reason": "Gate gate-payment-review is Pending while automated checks run." },
       "overview": "Review the pull request that adjusts payment retry backoff.",
-      "timeline": [{ "at": "2026-09-10T07:45:00Z", "label": "Review started", "detail": "Automated checks are still running." }],
-      "gates": [{ "id": "gate-payment-review", "name": "Review approval", "status": "Pending", "owner": "Reviewer" }],
+      "timeline": [{
+        "at": "2026-09-10T07:45:00Z",
+        "label": "Review started",
+        "detail": "Automated checks are still running.",
+        "refs": [
+          { "type": "Run", "id": "run-payment-retry-review" },
+          { "type": "Gate", "id": "gate-payment-review" },
+          { "type": "Artifact", "id": "artifact-payment-review", "revisionId": "artifact-payment-review-r1" }
+        ]
+      }],
+      "gates": [{
+        "id": "gate-payment-review",
+        "kind": "External Gate",
+        "name": "Review approval",
+        "status": "Pending",
+        "owner": "Reviewer",
+        "evidence": { "evidenceId": "evidence-payment-retry", "revisionId": "evidence-payment-retry-r1", "appliesToRevision": "mission-pr-review-r1" }
+      }],
       "dependencies": [],
-      "evidence": [{ "kind": "Pull Request", "label": "Payment retry changes", "status": "Checks running" }],
-      "artifacts": [{ "id": "artifact-payment-review", "name": "Payment retry review Artifact", "status": "Running" }],
+      "evidence": [{
+        "id": "evidence-payment-retry",
+        "kind": "Pull Request",
+        "label": "Payment retry changes",
+        "status": "Checks running",
+        "revisionId": "evidence-payment-retry-r1",
+        "refs": [
+          { "type": "Run", "id": "run-payment-retry-review" },
+          { "type": "Artifact", "id": "artifact-payment-review", "revisionId": "artifact-payment-review-r1" }
+        ]
+      }],
+      "artifacts": [{ "id": "artifact-payment-review", "name": "Payment retry review Artifact", "revisionId": "artifact-payment-review-r1", "status": "In progress", "immutable": true }],
       "drift": []
     },
     {
@@ -69,19 +153,46 @@
       "workType": "Change Proposal",
       "state": "Open",
       "situation": "Ready",
-      "attentionRank": 4,
-      "run": { "status": "Ready", "attention": "normal" },
-      "badges": ["Ready"],
+      "attentionRank": 5,
+      "revisionId": "mission-change-proposal-r1",
+      "run": null,
+      "badges": [],
       "nextAction": "Start the change run",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Autonomy Grant",
+      "frontier": { "status": "eligible", "reason": "Gate gate-staging-window is Satisfied and no dependencies block start." },
       "overview": "Rotate staging credentials during the next approved maintenance window.",
-      "timeline": [{ "at": "2026-09-10T07:20:00Z", "label": "Proposal validated", "detail": "All preflight evidence is available." }],
-      "gates": [{ "id": "gate-staging-window", "name": "Maintenance window", "status": "Ready", "owner": "Operations" }],
+      "timeline": [{
+        "at": "2026-09-10T07:20:00Z",
+        "label": "Proposal validated",
+        "detail": "All preflight evidence is available.",
+        "refs": [
+          { "type": "Gate", "id": "gate-staging-window" },
+          { "type": "Artifact", "id": "artifact-credential-rotation", "revisionId": "artifact-credential-rotation-r1" }
+        ]
+      }],
+      "gates": [{
+        "id": "gate-staging-window",
+        "kind": "Human Gate",
+        "name": "Maintenance window",
+        "status": "Satisfied",
+        "owner": "Operations",
+        "evidence": { "evidenceId": "evidence-credential-rotation", "revisionId": "evidence-credential-rotation-r1", "appliesToRevision": "mission-change-proposal-r1" }
+      }],
       "dependencies": [],
-      "evidence": [{ "kind": "Runbook", "label": "Credential rotation runbook", "status": "Verified" }],
-      "artifacts": [{ "id": "artifact-credential-rotation", "name": "Credential rotation Artifact", "status": "Ready" }],
+      "evidence": [{
+        "id": "evidence-credential-rotation",
+        "kind": "Runbook",
+        "label": "Credential rotation runbook",
+        "status": "Verified",
+        "revisionId": "evidence-credential-rotation-r1",
+        "refs": [
+          { "type": "Gate", "id": "gate-staging-window" },
+          { "type": "Artifact", "id": "artifact-credential-rotation", "revisionId": "artifact-credential-rotation-r1" }
+        ]
+      }],
+      "artifacts": [{ "id": "artifact-credential-rotation", "name": "Credential rotation Artifact", "revisionId": "artifact-credential-rotation-r1", "status": "Available", "immutable": true }],
       "drift": []
     },
     {
@@ -90,20 +201,51 @@
       "workType": "Bug Fix",
       "state": "Open",
       "situation": "Stalled",
-      "attentionRank": 5,
-      "run": { "status": "Failed", "attention": "stalled" },
+      "attentionRank": 2,
+      "revisionId": "mission-bug-drift-r1",
+      "run": { "id": "run-webhook-reconciliation", "status": "Failed", "attention": "stalled" },
       "badges": ["Stalled", "Projection Drift"],
       "nextAction": "Reconcile the failed run with the projection",
       "nextActionSimulated": true,
       "revisionValid": true,
       "authority": "Exact Operator approval",
+      "frontier": { "status": "blocked", "reason": "Gate gate-webhook-replay is Pending and Projection Drift drift-webhook-reconciliation requires intervention." },
       "overview": "Prevent duplicate webhook deliveries after a worker restart.",
-      "timeline": [{ "at": "2026-09-10T06:55:00Z", "label": "Run stalled", "detail": "The worker failed before publishing the final artifact." }],
-      "gates": [{ "id": "gate-webhook-replay", "name": "Replay verification", "status": "Pending", "owner": "Engineering" }],
-      "dependencies": [{ "id": "dep-worker-restart", "name": "Worker restart reproduction", "status": "Ready" }],
-      "evidence": [{ "kind": "Log", "label": "Duplicate delivery trace", "status": "Captured" }],
-      "artifacts": [{ "id": "artifact-webhook-reconciliation", "name": "Webhook reconciliation Artifact", "status": "Drifted" }],
-      "drift": [{ "kind": "Projection Drift", "source": "Run", "detail": "Run failed but the projection still reports the artifact as published." }]
+      "timeline": [{
+        "at": "2026-09-10T06:55:00Z",
+        "label": "Run stalled",
+        "detail": "The worker failed before publishing the final artifact.",
+        "refs": [
+          { "type": "Run", "id": "run-webhook-reconciliation" },
+          { "type": "Gate", "id": "gate-webhook-replay" },
+          { "type": "Artifact", "id": "artifact-webhook-reconciliation", "revisionId": "artifact-webhook-reconciliation-r1" },
+          { "type": "Dependency", "id": "dep-worker-restart" },
+          { "type": "Drift", "id": "drift-webhook-reconciliation" }
+        ]
+      }],
+      "gates": [{
+        "id": "gate-webhook-replay",
+        "kind": "External Gate",
+        "name": "Replay verification",
+        "status": "Pending",
+        "owner": "Engineering",
+        "evidence": { "evidenceId": "evidence-duplicate-delivery", "revisionId": "evidence-duplicate-delivery-r1", "appliesToRevision": "mission-bug-drift-r1" }
+      }],
+      "dependencies": [{ "id": "dep-worker-restart", "name": "Worker restart reproduction", "status": "Satisfied" }],
+      "evidence": [{
+        "id": "evidence-duplicate-delivery",
+        "kind": "Log",
+        "label": "Duplicate delivery trace",
+        "status": "Captured",
+        "revisionId": "evidence-duplicate-delivery-r1",
+        "refs": [
+          { "type": "Run", "id": "run-webhook-reconciliation" },
+          { "type": "Artifact", "id": "artifact-webhook-reconciliation", "revisionId": "artifact-webhook-reconciliation-r1" },
+          { "type": "Drift", "id": "drift-webhook-reconciliation" }
+        ]
+      }],
+      "artifacts": [{ "id": "artifact-webhook-reconciliation", "name": "Webhook reconciliation Artifact", "revisionId": "artifact-webhook-reconciliation-r1", "status": "Drifted", "immutable": true }],
+      "drift": [{ "id": "drift-webhook-reconciliation", "kind": "Projection Drift", "source": "Run", "detail": "Run failed but the projection still reports the artifact as published." }]
     }
   ]
 }

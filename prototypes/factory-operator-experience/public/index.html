@@ -155,6 +155,7 @@
       .record-key { color: var(--muted); font-size: .78rem; }
       .record-value { line-height: 1.5; }
       .record-value strong { display: block; margin-bottom: .2rem; }
+      .record-refs { margin-top: .55rem; color: var(--muted); font: .72rem/1.5 ui-monospace, monospace; }
       .empty { padding: 2rem; border: 1px dashed var(--line); border-radius: .65rem; color: var(--muted); text-align: center; }
 
       #action-bar {
@@ -246,6 +247,7 @@
         'Review payment retry changes': 'Revisar los cambios de reintentos de pago',
         'Rotate staging credentials': 'Rotar las credenciales de preproducción',
         'Fix duplicate webhook deliveries': 'Corregir las entregas duplicadas de webhooks',
+        Waiting: 'En espera',
         'Waiting on Human Gate': 'En espera de Human Gate',
         'Blocked dependency': 'Dependencia bloqueada',
         'Approve the export scope gate': 'Aprobar el Gate de alcance de exportación',
@@ -264,6 +266,8 @@
         'Human Gate requested': 'Human Gate solicitado',
         'Scope approval is required before implementation.': 'Se requiere aprobar el alcance antes de la implementación.',
         'Execution Frontier reached': 'Execution Frontier alcanzada',
+        'Execution Frontier evaluated': 'Execution Frontier evaluada',
+        blocked: 'Bloqueada', waiting: 'En espera', eligible: 'Elegible',
         'Rule validation is the next executable step.': 'La validación de reglas es el siguiente paso ejecutable.',
         'Review started': 'Revisión iniciada',
         'Automated checks are still running.': 'Las comprobaciones automáticas siguen en ejecución.',
@@ -329,7 +333,7 @@
         document.querySelector('#mission-list').innerHTML = missions.map((mission) => {
           const gateBadges = mission.gates.map((gate) => `Gate · ${gate.status}`);
           const driftBadge = mission.drift.length ? [`Drift · ${mission.drift.length}`] : ['Drift · 0'];
-          const allBadges = [`Run · ${mission.run?.status ?? 'None'}`, ...gateBadges, ...driftBadge];
+          const allBadges = [`Run · ${mission.run?.status ?? 'None'}`, `Frontier · ${mission.frontier.status}`, ...gateBadges, ...driftBadge];
           return `
             <button class="mission-row" type="button" data-mission-id="${escapeHtml(mission.id)}" aria-current="${mission.id === selectedMission()?.id}">
               <span class="row-top"><span class="row-meta">${escapeHtml(mission.workType)}</span><span class="rank">A${mission.attentionRank}</span></span>
@@ -365,17 +369,25 @@
       function renderTab(mission) {
         if (state.tab === 'Overview') return renderOverview(mission);
         const renderers = {
-          Timeline: (record) => [formatDate(record.at), record.label, record.detail],
-          Gates: (record) => [record.id, record.name, `${record.status} · Responsable: ${spanishCopy[record.owner] ?? record.owner}`],
-          Dependencies: (record) => [record.id, record.name, record.status],
-          Evidence: (record) => [record.kind, record.label, record.status]
+          Timeline: (record) => [formatDate(record.at), record.label, record.detail, record.refs],
+          Gates: (record) => [record.id, record.name, `${record.kind} · ${record.status} · Responsable: ${spanishCopy[record.owner] ?? record.owner}`, [
+            { type: 'Evidence', id: record.evidence.evidenceId, revisionId: record.evidence.revisionId },
+            { type: 'appliesToRevision', id: record.evidence.appliesToRevision }
+          ]],
+          Dependencies: (record) => [record.id, record.name, record.status, record.refs],
+          Evidence: (record) => [record.kind, record.label, `${record.status} · revision ${record.revisionId}`, record.refs]
         };
         const records = mission[state.tab.toLowerCase()];
         if (!records.length) return `<div class="empty">No hay registros de ${state.tab} para esta Mission.</div>`;
         return `<ul class="records">${records.map((record) => {
-          const [key, title, detail] = renderers[state.tab](record);
-          return `<li class="record"><span class="record-key">${copy(key)}</span><span class="record-value"><strong>${copy(title)}</strong>${copy(detail)}</span></li>`;
+          const [key, title, detail, refs] = renderers[state.tab](record);
+          return `<li class="record"><span class="record-key">${copy(key)}</span><span class="record-value"><strong>${copy(title)}</strong>${copy(detail)}${renderRefs(refs)}</span></li>`;
         }).join('')}</ul>`;
+      }
+
+      function renderRefs(refs = []) {
+        if (!refs?.length) return '';
+        return `<div class="record-refs">Referencias: ${refs.map((ref) => `${copy(ref.type)} · ${escapeHtml(ref.id)}${ref.revisionId ? ` · revision ${escapeHtml(ref.revisionId)}` : ''}`).join(' · ')}</div>`;
       }
 
       function renderOverview(mission) {
@@ -387,7 +399,6 @@
         const metrics = [
           ['Situación operativa', mission.situation],
           ['Run', `${mission.run?.status ?? 'None'} · ${mission.run?.attention ?? 'sin atención'}`],
-          ['Execution Frontier', mission.badges.includes('Execution Frontier') ? 'Dentro' : 'Fuera'],
           ['Missions hijas / dependencias', `${mission.children?.length ?? 0} / ${mission.dependencies.length}`],
           ['Gates', gateSummary],
           ['Artifacts', String(mission.artifacts.length)],
@@ -398,18 +409,24 @@
             <span class="record-key">${escapeHtml(record.kind)} · ${escapeHtml(record.source)}</span>
             <span class="record-value"><strong>Projection Drift</strong>${copy(record.detail)}</span>
           </li>`).join('');
+        const frontier = `
+          <li class="record">
+            <span class="record-key">Execution Frontier</span>
+            <span class="record-value"><strong>${copy(mission.frontier.status)}</strong>${copy(mission.frontier.reason)}</span>
+          </li>`;
         return `
           <p class="summary">${copy(mission.overview)}</p>
           <div class="metrics">${metrics.map(([label, value]) => `<div class="metric"><span>${copy(label)}</span><strong>${copy(value)}</strong></div>`).join('')}</div>
+          <h3>Execution Frontier</h3><ul class="records">${frontier}</ul>
           ${drift ? `<h3>Detalle de Projection Drift</h3><ul class="records">${drift}</ul>` : ''}`;
       }
 
       function actionPolicy(mission) {
         const inspectionOnly = mission.authority === 'Local inspection only';
-        const approvingGate = mission.nextAction === 'Approve the export scope gate';
-        // ponytail: Ready es la disponibilidad sembrada; una integración real exige evaluaciones Satisfied versionadas.
-        const invalidGate = mission.gates.find((gate) => !['Satisfied', 'Ready'].includes(gate.status)
-          && !(approvingGate && gate.status === 'Pending'));
+        const approvingGate = mission.authority === 'Exact Operator approval'
+          && mission.nextAction === 'Approve the export scope gate';
+        const invalidGate = inspectionOnly ? null : mission.gates.find((gate) => gate.status !== 'Satisfied'
+          && !(approvingGate && gate.kind === 'Human Gate' && gate.status === 'Pending'));
         const invalidRevision = mission.revisionValid !== true;
         const reason = mission.nextActionSimulated !== true ? 'La acción no está marcada como simulada'
           : invalidRevision ? 'Revisión no vigente' : inspectionOnly ? ''
@@ -432,7 +449,7 @@
           <div class="action-copy">
             <p class="eyebrow">Acción recomendada · PROTOTYPE — local memory only</p>
             <strong>${copy(mission.nextAction)}</strong>
-            <p>Autoridad requerida: ${escapeHtml(policy.authority)}${policy.reason ? ` · ${escapeHtml(policy.reason)}` : ''}</p>
+            <p>Autoridad requerida: ${copy(policy.authority)}${policy.reason ? ` · ${escapeHtml(policy.reason)}` : ''}</p>
           </div>
           <div class="action-controls">
             ${inspectionTabs.map((tab) => `<button class="action-button" type="button" data-tab="${tab}">Simular inspección · Ver ${tab}</button>`).join('')}
