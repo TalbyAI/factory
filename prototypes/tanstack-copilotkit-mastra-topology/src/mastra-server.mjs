@@ -96,6 +96,7 @@ async function main() {
     const events = await eventsAfter(pool, runId, after);
     const replay = new Map(events.map(event => [event.sequence, event]));
     for (const [sequence, event] of subscriber.pending) replay.set(sequence, event);
+    subscriber.pending.clear();
     for (const event of [...replay.values()].sort((left, right) => Number(left.sequence) - Number(right.sequence))) writeOnce(runId, subscriber, event);
     subscriber.replaying = false;
   }
