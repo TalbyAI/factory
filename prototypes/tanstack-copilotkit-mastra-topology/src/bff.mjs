@@ -225,7 +225,7 @@ async function effectExists(pool, runId) {
   return result.rowCount === 1;
 }
 
-async function durableWorkflowSucceeded(runId) {
+async function durableWorkflowStatus(runId) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2_000);
   try {
@@ -247,7 +247,12 @@ async function durableWorkflowSucceeded(runId) {
         const data = message.split('\n').find(line => line.startsWith('data: '));
         if (!data) continue;
         const event = JSON.parse(data.slice(6));
-        if (event.kind === 'workflow-finish') return event.chunk?.payload?.workflowStatus === 'success';
+        if (event.kind === 'workflow.error' || event.chunk?.type === 'workflow.error') return 'failed';
+        if (event.kind === 'workflow-finish') {
+          const status = event.chunk?.payload?.workflowStatus;
+          if (status === 'success') return 'success';
+          if (status === 'failed' || status === 'error') return 'failed';
+        }
       }
       if (done) throw new Error('Mastra did not persist a workflow finish');
     }
@@ -259,8 +264,15 @@ async function durableWorkflowSucceeded(runId) {
 
 async function releaseApprovalIfSafe(pool, runId, idempotencyKey) {
   try {
-    if (!await effectExists(pool, runId)) await releaseApproval(pool, runId, idempotencyKey);
+    if (await effectExists(pool, runId)) return;
   } catch {}
+  try {
+    await releaseApproval(pool, runId, idempotencyKey);
+  } catch {}
+}
+
+async function failMission(pool, runId) {
+  await pool.query("update topology_factory.missions set status = 'failed' where run_id = $1", [runId]);
 }
 
 async function approve(pool, res, runId, body) {
@@ -275,13 +287,18 @@ async function approve(pool, res, runId, body) {
     if (reservation.state === 'pending') return json(res, 409, { error: 'Command is pending' });
     try {
       if (await effectExists(pool, runId)) {
-        let succeeded;
+        let status;
         try {
-          succeeded = await durableWorkflowSucceeded(runId);
+          status = await durableWorkflowStatus(runId);
         } catch {
+          await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
           return json(res, 503, { error: 'Cannot verify durable workflow state; retry the command' });
         }
-        if (!succeeded) return json(res, 503, { error: 'Durable workflow did not succeed; retry the command' });
+        if (status !== 'success') {
+          await failMission(pool, runId);
+          await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
+          return json(res, 503, { error: 'Durable workflow finished without success; retry recovery' });
+        }
         await confirmApproval(pool, runId, body.idempotencyKey);
         return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
       }
@@ -291,8 +308,26 @@ async function approve(pool, res, runId, body) {
         body: JSON.stringify({ command: 'approve', idempotencyKey: body.idempotencyKey }),
       });
       if (!upstream.ok) {
+        try {
+          const status = await durableWorkflowStatus(runId);
+          if (status === 'success') {
+            await confirmApproval(pool, runId, body.idempotencyKey);
+            return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+          }
+          if (status === 'failed') {
+            await failMission(pool, runId);
+            await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
+            return json(res, 503, { error: 'Durable workflow finished without success; retry recovery' });
+          }
+        } catch {}
         await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
         return json(res, upstream.status, { error: 'Mastra did not resume the Run' });
+      }
+      const status = await durableWorkflowStatus(runId);
+      if (status !== 'success') {
+        await failMission(pool, runId);
+        await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
+        return json(res, 503, { error: 'Durable workflow finished without success; retry recovery' });
       }
       await confirmApproval(pool, runId, body.idempotencyKey);
       return json(res, 200, { runId, accepted: true, gate: 'satisfied' });

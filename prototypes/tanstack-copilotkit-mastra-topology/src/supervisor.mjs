@@ -78,8 +78,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(config.supervisorPort, '127.0.0.1');
-process.once('SIGINT', async () => {
+process.once('SIGINT', () => {
   shuttingDown = true;
-  await new Promise(resolve => server.close(resolve));
-  await Promise.all([...children.values()].map(stop));
+  server.close();
+  void Promise.all([...children.values()].map(stop)).finally(() => process.exit());
 });

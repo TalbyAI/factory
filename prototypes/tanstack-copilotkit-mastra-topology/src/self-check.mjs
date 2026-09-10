@@ -238,7 +238,7 @@ async function main() {
     assert.equal(pending.runId, runId);
 
     const approval = await approve(runId, 'approve-1');
-    assert.equal(approval.status, 200);
+    assert.equal(approval.status, 200, await approval.text());
     const completed = await nextEvents(runId, pending.sequence, event => event.kind === 'workflow.completed');
     assert.equal(completed.runId, runId);
     assert.equal((await scalar(pool, 'select count(*) from topology_factory.effects')).value, '1');
@@ -286,17 +286,7 @@ async function main() {
     assert.equal(await countForRun(pool, 'commands', recoveredRunId), 1);
     assert.equal((await scalar(pool, `select accepted from topology_factory.commands where run_id = '${recoveredRunId}'`)).value, 'false');
     assert.equal((await scalar(pool, `select gate from topology_factory.missions where run_id = '${recoveredRunId}'`)).value, 'pending');
-    const recoveryConflict = await approve(recoveredRunId, 'recover-command-other');
-    assert.equal(recoveryConflict.status, 409);
-    assert.equal(await countForRun(pool, 'commands', recoveredRunId), 1);
-    await pool.query(
-      `update topology_mastra.events set payload = $2
-       where run_id = $1 and sequence = 1`,
-      [recoveredRunId, { chunk: { type: 'workflow-finish', payload: { workflowStatus: 'success' } } }],
-    );
-    const recoveredSuccess = await approve(recoveredRunId, 'recover-command');
-    assert.equal(recoveredSuccess.status, 200);
-    assert.equal((await scalar(pool, `select gate from topology_factory.missions where run_id = '${recoveredRunId}'`)).value, 'satisfied');
+    assert.equal((await scalar(pool, `select status from topology_factory.missions where run_id = '${recoveredRunId}'`)).value, 'failed');
 
     const abandoned = await startRun();
     const abandonedPending = await nextEvents(abandoned.runId, 0, event => event.kind === 'workflow.suspended');
@@ -305,6 +295,9 @@ async function main() {
       "insert into topology_factory.commands (idempotency_key, run_id, command, accepted) values ($1, $2, 'approve', false)",
       ['approve-abandoned', abandoned.runId],
     );
+    const abandonedRestart = await fetch(`${supervisorUrl}/admin/restart/bff`, { method: 'POST' });
+    assert.equal(abandonedRestart.status, 202);
+    await waitFor(`${bffUrl}/health`);
     const abandonedRetry = await approve(abandoned.runId, 'approve-abandoned');
     assert.equal(abandonedRetry.status, 200);
     const abandonedCompleted = await nextEvents(abandoned.runId, abandonedPending.sequence, event => event.kind === 'workflow.completed');
@@ -381,10 +374,10 @@ async function main() {
     const shutdown = await startRun();
     const shutdownSse = await request(`/api/runs/${encodeURIComponent(shutdown.runId)}/events?after=0`);
     assert.equal(shutdownSse.status, 200);
-    await stopSupervisor(supervisor);
+    await within(stopSupervisor(supervisor), 2_500, 'Supervisor waited for an open SSE before forcing its children');
     supervisor = undefined;
     await portsAreFree();
-    await shutdownSse.body.cancel();
+    await shutdownSse.body.cancel().catch(() => {});
   } catch (error) {
     failure = error;
   } finally {

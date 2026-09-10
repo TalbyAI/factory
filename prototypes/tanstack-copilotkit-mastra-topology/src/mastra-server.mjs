@@ -31,7 +31,9 @@ function cursor(url) {
 }
 
 function terminal(chunk) {
-  return chunk.type === 'workflow.error' || chunk.type === 'workflow-finish';
+  return chunk.type === 'workflow.error' || (
+    chunk.type === 'workflow-finish' && chunk.payload?.workflowStatus !== 'suspended'
+  );
 }
 
 function unsubscribe(runId, subscriber) {
