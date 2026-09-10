@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { config } from './config.mjs';
 import { createPool } from './db.mjs';
 import { json, readJson } from './protocol.mjs';
@@ -44,18 +45,34 @@ async function startRun(pool, res) {
 
 async function proxyEvents(req, res, runId, after) {
   const controller = new AbortController();
-  res.on('close', () => controller.abort());
-  const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/events?after=${after}`, {
-    headers: { authorization: `Bearer ${config.serviceToken}` },
-    signal: controller.signal,
-  });
-  if (!upstream.ok || !upstream.body) return json(res, upstream.status, { error: 'Mastra event stream unavailable' });
-  res.writeHead(upstream.status, {
-    'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
-    'cache-control': upstream.headers.get('cache-control') ?? 'no-cache',
-    connection: 'keep-alive',
-  });
-  Readable.fromWeb(upstream.body).pipe(res);
+  let downstreamClosed = false;
+  const disconnect = () => {
+    if (downstreamClosed) return;
+    downstreamClosed = true;
+    controller.abort();
+  };
+  req.once('aborted', disconnect);
+  res.once('close', disconnect);
+  try {
+    const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/events?after=${after}`, {
+      headers: { authorization: `Bearer ${config.serviceToken}` },
+      signal: controller.signal,
+    });
+    if (!upstream.ok || !upstream.body) return json(res, upstream.status, { error: 'Mastra event stream unavailable' });
+    res.writeHead(upstream.status, {
+      'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
+      'cache-control': upstream.headers.get('cache-control') ?? 'no-cache',
+      connection: 'keep-alive',
+    });
+    const body = Readable.fromWeb(upstream.body);
+    await pipeline(body, res);
+  } catch (error) {
+    if (downstreamClosed) return;
+    throw error;
+  } finally {
+    req.off('aborted', disconnect);
+    res.off('close', disconnect);
+  }
 }
 
 async function approve(pool, res, runId, body) {
