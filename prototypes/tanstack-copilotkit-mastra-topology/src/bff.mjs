@@ -39,7 +39,7 @@ async function startRun(pool, res) {
     await pool.query('update topology_factory.missions set status = $1 where run_id = $2', ['failed', runId]);
     return json(res, 502, { error: 'Mastra did not start the Run' });
   }
-  return json(res, 201, { runId });
+  return json(res, 200, { runId });
 }
 
 async function proxyEvents(req, res, runId, after) {
@@ -67,6 +67,16 @@ async function approve(pool, res, runId, body) {
   try {
     await client.query('begin');
     inTransaction = true;
+    const { rows: [existingCommand] } = await client.query(
+      'select run_id from topology_factory.commands where idempotency_key = $1',
+      [body.idempotencyKey],
+    );
+    if (existingCommand) {
+      await client.query('rollback');
+      inTransaction = false;
+      if (existingCommand.run_id !== runId) return json(res, 409, { error: 'Idempotency key belongs to another Run' });
+      return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+    }
     const { rows: [mission] } = await client.query(
       'select gate from topology_factory.missions where run_id = $1 for update',
       [runId],
