@@ -145,10 +145,16 @@ async function reserveApproval(pool, runId, idempotencyKey) {
         'select run_id, command, accepted from topology_factory.commands where idempotency_key = $1',
         [idempotencyKey],
       );
-      await client.query('rollback');
-      inTransaction = false;
-      if (existingCommand?.run_id !== runId || existingCommand.command !== 'approve') return { state: 'conflict' };
-      return { state: existingCommand.accepted ? 'accepted' : 'pending' };
+      if (existingCommand?.run_id !== runId || existingCommand.command !== 'approve') {
+        await client.query('rollback');
+        inTransaction = false;
+        return { state: 'conflict' };
+      }
+      if (existingCommand.accepted) {
+        await client.query('rollback');
+        inTransaction = false;
+        return { state: 'accepted' };
+      }
     }
     const { rows: [mission] } = await client.query(
       'select gate from topology_factory.missions where run_id = $1 for update',
@@ -159,6 +165,15 @@ async function reserveApproval(pool, runId, idempotencyKey) {
       await client.query('commit');
       inTransaction = false;
       return { state: 'stale' };
+    }
+    if (command.rowCount && (await client.query(
+      "select 1 from topology_factory.commands where run_id = $1 and command = 'approve' and idempotency_key <> $2 limit 1",
+      [runId, idempotencyKey],
+    )).rowCount) {
+      await client.query('delete from topology_factory.commands where idempotency_key = $1 and accepted = false', [idempotencyKey]);
+      await client.query('commit');
+      inTransaction = false;
+      return { state: 'pending' };
     }
     await client.query('commit');
     inTransaction = false;
@@ -210,6 +225,44 @@ async function effectExists(pool, runId) {
   return result.rowCount === 1;
 }
 
+async function durableWorkflowSucceeded(runId) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2_000);
+  try {
+    const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/events?after=0`, {
+      headers: { authorization: `Bearer ${config.serviceToken}` },
+      signal: controller.signal,
+    });
+    if (!upstream.ok || !upstream.body) throw new Error('Mastra event stream unavailable');
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let end;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        const message = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const data = message.split('\n').find(line => line.startsWith('data: '));
+        if (!data) continue;
+        const event = JSON.parse(data.slice(6));
+        if (event.kind === 'workflow-finish') return event.chunk?.payload?.workflowStatus === 'success';
+      }
+      if (done) throw new Error('Mastra did not persist a workflow finish');
+    }
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+}
+
+async function releaseApprovalIfSafe(pool, runId, idempotencyKey) {
+  try {
+    if (!await effectExists(pool, runId)) await releaseApproval(pool, runId, idempotencyKey);
+  } catch {}
+}
+
 async function approve(pool, res, runId, body) {
   if (body.command !== 'approve' || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey) {
     return json(res, 409, { error: 'Only approve with an idempotencyKey is accepted' });
@@ -219,27 +272,32 @@ async function approve(pool, res, runId, body) {
     if (reservation.state === 'conflict') return json(res, 409, { error: 'Idempotency key belongs to another Run' });
     if (reservation.state === 'stale') return json(res, 409, { error: 'Gate is not pending' });
     if (reservation.state === 'accepted') return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
-    if (await effectExists(pool, runId)) {
-      await confirmApproval(pool, runId, body.idempotencyKey);
-      return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
-    }
     if (reservation.state === 'pending') return json(res, 409, { error: 'Command is pending' });
-    let resumed = false;
     try {
+      if (await effectExists(pool, runId)) {
+        let succeeded;
+        try {
+          succeeded = await durableWorkflowSucceeded(runId);
+        } catch {
+          return json(res, 503, { error: 'Cannot verify durable workflow state; retry the command' });
+        }
+        if (!succeeded) return json(res, 503, { error: 'Durable workflow did not succeed; retry the command' });
+        await confirmApproval(pool, runId, body.idempotencyKey);
+        return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
+      }
       const upstream = await fetch(`${mastraUrl}/runs/${encodeURIComponent(runId)}/resume`, {
         method: 'POST',
         headers: { authorization: `Bearer ${config.serviceToken}`, 'content-type': 'application/json' },
         body: JSON.stringify({ command: 'approve', idempotencyKey: body.idempotencyKey }),
       });
       if (!upstream.ok) {
-        await releaseApproval(pool, runId, body.idempotencyKey);
+        await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
         return json(res, upstream.status, { error: 'Mastra did not resume the Run' });
       }
-      resumed = true;
       await confirmApproval(pool, runId, body.idempotencyKey);
       return json(res, 200, { runId, accepted: true, gate: 'satisfied' });
     } catch (error) {
-      if (!resumed) await releaseApproval(pool, runId, body.idempotencyKey);
+      await releaseApprovalIfSafe(pool, runId, body.idempotencyKey);
       throw error;
     }
   });

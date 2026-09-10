@@ -7,6 +7,7 @@ import { json } from './protocol.mjs';
 const children = new Map();
 const restarts = new Map();
 let shuttingDown = false;
+const stopTimeout = 1_000;
 
 function start(name, file) {
   if (shuttingDown) return;
@@ -23,7 +24,7 @@ function start(name, file) {
 function stop(child) {
   if (!child || child.exitCode !== null) return Promise.resolve();
   return new Promise(resolve => {
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5_000);
+    const timer = setTimeout(() => child.kill('SIGKILL'), stopTimeout);
     child.once('exit', () => {
       clearTimeout(timer);
       resolve();
@@ -67,6 +68,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') return res.end();
     const match = url.pathname.match(/^\/admin\/restart\/(bff|mastra)$/);
     if (req.method !== 'POST' || !match) return json(res, 404, { error: 'not found' });
+    if (shuttingDown) return json(res, 503, { error: 'supervisor is shutting down' });
     await restart(match[1], controls[match[1]]);
     return json(res, 202, { restarted: match[1] });
   } catch (error) {
@@ -76,8 +78,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(config.supervisorPort, '127.0.0.1');
-process.once('SIGINT', () => {
+process.once('SIGINT', async () => {
   shuttingDown = true;
-  server.close();
-  void Promise.all([...children.values()].map(stop));
+  await new Promise(resolve => server.close(resolve));
+  await Promise.all([...children.values()].map(stop));
 });

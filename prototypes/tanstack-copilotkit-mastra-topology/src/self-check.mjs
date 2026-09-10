@@ -192,10 +192,8 @@ async function main() {
   let failure;
   try {
     await portsAreFree();
-    if (!await postgresWasRunning()) {
-      startedPostgres = true;
-      await run('docker', ['compose', 'up', '-d', '--wait', 'postgres'], { stdio: 'inherit' });
-    }
+    startedPostgres = !await postgresWasRunning();
+    await run('docker', ['compose', 'up', '-d', '--wait', 'postgres'], { stdio: 'inherit' });
     pool = createPool();
     await assertScratchDatabase(pool);
     await resetSchemas(pool);
@@ -258,7 +256,7 @@ async function main() {
     const stale = await approve(runId, 'approve-stale');
     assert.equal(stale.status, 409);
 
-    const recoveredRunId = 'effect-before-confirmation';
+    const recoveredRunId = 'failed-effect-before-confirmation';
     await pool.query(
       "insert into topology_factory.missions (run_id, mission_id, status, gate) values ($1, $1, 'running', 'pending')",
       [recoveredRunId],
@@ -267,10 +265,52 @@ async function main() {
       'insert into topology_factory.effects (idempotency_key, run_id) values ($1, $2)',
       [`${recoveredRunId}:publish`, recoveredRunId],
     );
+    await pool.query(
+      `insert into topology_mastra.events (run_id, sequence, kind, payload)
+       values ($1, 1, 'workflow-finish', $2)`,
+      [recoveredRunId, { chunk: { type: 'workflow-finish', payload: { workflowStatus: 'failed' } } }],
+    );
+    const failedTerminal = await within(
+      mastraRequest(`/runs/${encodeURIComponent(recoveredRunId)}/events?after=0`, {
+        headers: { authorization: `Bearer ${config.serviceToken}` },
+      }).then(async response => {
+        assert.equal(response.status, 200);
+        return response.text();
+      }),
+      2_000,
+      'Failed workflow finish left its SSE stream open',
+    );
+    assert.match(failedTerminal, /workflow-finish/);
     const recovered = await approve(recoveredRunId, 'recover-command');
-    assert.equal(recovered.status, 200);
+    assert.notEqual(recovered.status, 200);
     assert.equal(await countForRun(pool, 'commands', recoveredRunId), 1);
+    assert.equal((await scalar(pool, `select accepted from topology_factory.commands where run_id = '${recoveredRunId}'`)).value, 'false');
+    assert.equal((await scalar(pool, `select gate from topology_factory.missions where run_id = '${recoveredRunId}'`)).value, 'pending');
+    const recoveryConflict = await approve(recoveredRunId, 'recover-command-other');
+    assert.equal(recoveryConflict.status, 409);
+    assert.equal(await countForRun(pool, 'commands', recoveredRunId), 1);
+    await pool.query(
+      `update topology_mastra.events set payload = $2
+       where run_id = $1 and sequence = 1`,
+      [recoveredRunId, { chunk: { type: 'workflow-finish', payload: { workflowStatus: 'success' } } }],
+    );
+    const recoveredSuccess = await approve(recoveredRunId, 'recover-command');
+    assert.equal(recoveredSuccess.status, 200);
     assert.equal((await scalar(pool, `select gate from topology_factory.missions where run_id = '${recoveredRunId}'`)).value, 'satisfied');
+
+    const abandoned = await startRun();
+    const abandonedPending = await nextEvents(abandoned.runId, 0, event => event.kind === 'workflow.suspended');
+    assert.equal(abandonedPending.runId, abandoned.runId);
+    await pool.query(
+      "insert into topology_factory.commands (idempotency_key, run_id, command, accepted) values ($1, $2, 'approve', false)",
+      ['approve-abandoned', abandoned.runId],
+    );
+    const abandonedRetry = await approve(abandoned.runId, 'approve-abandoned');
+    assert.equal(abandonedRetry.status, 200);
+    const abandonedCompleted = await nextEvents(abandoned.runId, abandonedPending.sequence, event => event.kind === 'workflow.completed');
+    assert.equal(abandonedCompleted.runId, abandoned.runId);
+    assert.equal(await countForRun(pool, 'commands', abandoned.runId), 1);
+    assert.equal(await countForRun(pool, 'effects', abandoned.runId), 1);
 
     const concurrent = await startRun();
     const concurrentPending = await nextEvents(concurrent.runId, 0, event => event.kind === 'workflow.suspended');
@@ -284,6 +324,33 @@ async function main() {
     assert.equal(concurrentCompleted.runId, concurrent.runId);
     assert.equal(await countForRun(pool, 'commands', concurrent.runId), 1);
     assert.equal(await countForRun(pool, 'effects', concurrent.runId), 1);
+
+    const manyRuns = await within(
+      Promise.all(Array.from({ length: 12 }, () => startRun())),
+      10_000,
+      'Concurrent Run creation deadlocked',
+    );
+    const manyPending = await within(
+      Promise.all(manyRuns.map(run => nextEvents(run.runId, 0, event => event.kind === 'workflow.suspended'))),
+      10_000,
+      'Concurrent Run suspension deadlocked',
+    );
+    const manyApprovals = await within(
+      Promise.all(manyRuns.map((run, index) => approve(run.runId, `approve-many-${index}`))),
+      10_000,
+      'Concurrent Run approval deadlocked',
+    );
+    for (const response of manyApprovals) assert.equal(response.status, 200);
+    const manyCompleted = await within(
+      Promise.all(manyRuns.map((run, index) => nextEvents(run.runId, manyPending[index].sequence, event => event.kind === 'workflow.completed'))),
+      10_000,
+      'Concurrent Run completion deadlocked',
+    );
+    for (const [index, completedRun] of manyCompleted.entries()) {
+      assert.equal(completedRun.runId, manyRuns[index].runId);
+      assert.equal(await countForRun(pool, 'commands', manyRuns[index].runId), 1);
+      assert.equal(await countForRun(pool, 'effects', manyRuns[index].runId), 1);
+    }
 
     const replay = await nextEvents(runId, completed.sequence, () => true, 250);
     assert.equal(replay, undefined);
@@ -310,6 +377,14 @@ async function main() {
     assert.equal(restartedApproval.status, 200);
     const restartedCompletion = await nextEvents(third.runId, thirdPending.sequence, event => event.kind === 'workflow.completed');
     assert.equal(restartedCompletion.runId, third.runId);
+
+    const shutdown = await startRun();
+    const shutdownSse = await request(`/api/runs/${encodeURIComponent(shutdown.runId)}/events?after=0`);
+    assert.equal(shutdownSse.status, 200);
+    await stopSupervisor(supervisor);
+    supervisor = undefined;
+    await portsAreFree();
+    await shutdownSse.body.cancel();
   } catch (error) {
     failure = error;
   } finally {
