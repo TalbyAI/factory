@@ -1,0 +1,8 @@
+{
+  "name": "mission-docker-isolation-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prototype": "node src/harness.mjs"
+  }
+}
