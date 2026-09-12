@@ -128,7 +128,7 @@ Cada Workflow predefinido declara:
 2. qué Gates y política permiten cada transición;
 3. qué efectos se solicitan después de persistirla.
 
-Estas tres responsabilidades no deben fundirse en prompts ni callbacks con acceso irrestricto. Toda transición usa un comando idempotente y una revisión esperada. Un botón, webhook o tool del agente son ingress distintos al mismo comando.
+Estas tres responsabilidades no deben fundirse en prompts ni callbacks con acceso irrestricto. Toda transición usa un comando idempotente con `idempotencyKey` y una revisión esperada. El comando persiste la clave, la huella de la intención y el resultado de la transición de forma atómica; una repetición con la misma clave e intención devuelve el resultado guardado antes de evaluar `expectedRevision`, mientras que reutilizarla con otra intención se rechaza. Sólo los comandos nuevos evalúan `expectedRevision`. Un botón, webhook o tool del agente son ingress distintos al mismo comando.
 
 ### 3. Gates generales y Composite Missions
 
@@ -172,7 +172,7 @@ Esto diverge conscientemente de Warp, cuyo flujo termina en human handoff con me
 
 El patrón mínimo es:
 
-- webhook firmado para baja latencia;
+- ingress autenticado para baja latencia: HMAC sobre el cuerpo original en GitHub y secreto de endpoint o Basic Auth sobre TLS en Azure DevOps;
 - persistencia del envelope y deduplicación antes de actuar;
 - reconciliación periódica del estado externo;
 - reanudación durable de Mastra para estado del Workflow;

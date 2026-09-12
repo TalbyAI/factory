@@ -98,7 +98,7 @@ Work Items dispone de una base robusta para reconciliación incremental:
 - Las updates de un Work Item permiten inspeccionar deltas entre revisiones ([Work Item Updates - List](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/updates/list?view=azure-devops-rest-7.1)).
 - Una escritura puede usar JSON Patch con una operación `test` sobre `/rev`, evitando sobrescribir silenciosamente una edición concurrente ([Work Items - Update](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update?view=azure-devops-rest-7.1)).
 
-El bootstrap puede usar WIQL para seleccionar el alcance y después leer IDs por lotes; los endpoints de Work Items aceptan como máximo 200 por batch ([WIQL - Query By WIQL](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/wiql/query-by-wiql?view=azure-devops-rest-7.1), [Work Items REST API](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items?view=azure-devops-rest-7.1)). Cada conexión debe persistir por separado el watermark de revisiones y el de links, avanzándolos solo tras aplicar el lote de forma transaccional.
+El bootstrap puede usar WIQL para seleccionar el alcance y después leer IDs por lotes; los endpoints de Work Items aceptan como máximo 200 por batch ([WIQL - Query By WIQL](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/wiql/query-by-wiql?view=azure-devops-rest-7.1), [Work Items REST API](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items?view=azure-devops-rest-7.1)). Cada conexión debe persistir por separado los cursores de feed de revisiones y de links y, para cada Work Item, la última `rev` aplicada. `continuationToken` pagina el feed; `rev` permite ignorar un snapshot atrasado del recurso. Los cursores sólo avanzan después de aplicar el lote de forma transaccional.
 
 Los PRs son menos cómodos. El listado filtra por status y por ventanas basadas en fecha de creación o cierre, pero no ofrece un cursor general de última modificación ([Pull Requests - Get Pull Requests](https://learn.microsoft.com/en-us/rest/api/azure/devops/git/pull-requests/get-pull-requests?view=azure-devops-rest-7.1)). La reconciliación debe enumerar todos los activos, consultar por ID los PRs conocidos y barrer una ventana solapada de completados/abandonados. La API de Service Hooks ayuda a detectar fallos, pero no elimina esta necesidad.
 
@@ -107,7 +107,7 @@ Los PRs son menos cómodos. El listado filtra por status y por ventanas basadas 
 ### Procesamiento de eventos
 
 1. Verificar autenticidad con el cuerpo sin transformar: HMAC en GitHub; secreto de endpoint/Basic Auth sobre TLS en Azure.
-2. Persistir envelope, headers relevantes, payload, instante de recepción y clave de deduplicación antes de responder.
+2. Persistir el envelope, una allowlist de headers no secretos, el payload, el instante de recepción y la clave de deduplicación antes de responder; omitir o redactar `Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key` y cualquier otro header confidencial.
 3. Responder 2xx rápidamente y procesar fuera de la petición.
 4. Convertir el evento en una orden de refresco por recurso, no en una transición de dominio directa.
 5. Leer el snapshot actual y aplicarlo de forma idempotente. En Azure Boards, ignorar revisiones menores o iguales a la última observada; en GitHub y en PRs de Azure, comparar snapshot/fingerprint y aceptar coalescencia.
@@ -124,7 +124,7 @@ Cada conexión necesita tres frecuencias distintas:
 - normal para el alcance gestionado y sus relaciones;
 - auditoría lenta para detectar eliminaciones, permisos perdidos, suscripciones deshabilitadas y recursos que dejaron de aparecer.
 
-Los cursores deben llevar solapamiento y no avanzar si falla un lote. La reconciliación compara tanto campos como relaciones; reparar únicamente título o estado y omitir Parent/Child o dependencias dejaría los Gates visualmente incoherentes.
+Los cursores de ventanas temporales —Issues de GitHub y PRs de Azure— deben llevar solapamiento; los `continuationToken` de Azure se consumen sin añadir solapamiento artificial. Ningún cursor avanza si falla un lote. La reconciliación compara tanto campos como relaciones; reparar únicamente título o estado y omitir Parent/Child o dependencias dejaría los Gates visualmente incoherentes.
 
 ### Política de drift
 
