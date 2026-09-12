@@ -51,7 +51,7 @@ De ahí se infiere la ventana crítica:
 
 El snapshot hace recuperable la Run, pero no puede probar si el efecto externo ocurrió. Ésta es semántica **at-least-once**. Ningún paso con efectos debe depender de que Mastra lo invoque una única vez.
 
-**Responsabilidad de Factory:** cada comando externo necesita una clave idempotente estable derivada de `MissionId/runId/stepId/operation`, búsqueda previa del resultado existente y persistencia del identificador devuelto. Para transiciones entre PostgreSQL y webhooks/APIs externas se necesita reconciliación; no hay atomicidad distribuida que Mastra pueda aportar.
+**Responsabilidad de Factory:** cada comando externo necesita una clave idempotente estable derivada de `MissionId/runId/stepId/operation`. Antes de invocarlo, debe crear o reclamar atómicamente un `Effect Record` durable con esa clave única y estado `pending`, con un lease para recuperar claims abandonados; si ya existe un resultado, reutiliza el identificador externo, y si queda `pending` o `unknown`, reconcilia el efecto antes de reintentarlo. Cuando el proveedor lo permita, se reutiliza la clave para su idempotencia nativa. Para transiciones entre PostgreSQL y webhooks/APIs externas se necesita reconciliación: una claim de base de datos no cierra la ventana de crash entre la llamada externa y el registro del resultado, y no hay atomicidad distribuida que Mastra pueda aportar.
 
 ### Suspend/resume y concurrencia
 

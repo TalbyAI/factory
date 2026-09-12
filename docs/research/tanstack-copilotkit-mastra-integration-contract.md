@@ -80,7 +80,7 @@ El BFF usará una única configuración server-only de `MastraClient` con:
 Los Workflows de Mission seguirán el patrón **start/observe**, que desacopla su vida de la petición del navegador. Como `run.start(...)` es fire-and-forget y no llena por sí solo el `serverCache`, el arranque debe mantener una fuente replayable:
 
 1. La Factory crea la Mission y el `workflowRunId`, y guarda la correlación antes de iniciar trabajo externo.
-2. El BFF inicia el Workflow con `run.stream(...)` dentro de un worker y consume su stream para mantener el `serverCache` de Mastra o un event store equivalente; no usa `run.start(...)` como único mecanismo de arranque.
+2. El BFF inicia el Workflow con `run.stream(...)` dentro de un worker y consume su stream para mantener el `serverCache` de Mastra; no usa `run.start(...)` como único mecanismo de arranque.
 3. La UI observa progreso a través de un endpoint autenticado del BFF; éste consume `run.observe({ offset })` y transmite sólo los eventos necesarios desde esa fuente replayable.
 4. El cliente conserva el último offset aplicado. Tras una desconexión vuelve a observar desde `offset + 1`.
 5. Al completar o suspenderse un paso, la Factory persiste el estado y los Artifacts relevantes. No persiste cada token.
@@ -141,7 +141,7 @@ El contexto funcional (`missionId`, versión de Workflow, política, actor) viaj
 | Reinicio de Mastra en mitad de un step activo | No se promete exactly-once; el step debe ser idempotente y la Factory debe reconciliar el efecto externo |
 | Reinicio de Mastra y replay completo del stream | Fuera del primer alcance: el server cache por defecto es in-memory; requiere cache/pubsub compartido, típicamente Redis |
 
-Los snapshots de Workflow preservan estado de pasos y suspensiones, pero no convierten automáticamente cualquier efecto externo en exactly-once. Cada step que escriba en GitHub, Azure DevOps, Git o el sandbox debe llevar una idempotency key estable derivada de `MissionId/runId + stepId + operation`, sin incluir `attempt`; éste se conserva sólo como metadato diagnóstico. Antes de repetir un efecto, el step busca el resultado existente por esa clave y persiste el identificador externo devuelto.
+Los snapshots de Workflow preservan estado de pasos y suspensiones, pero no convierten automáticamente cualquier efecto externo en exactly-once. Cada step que escriba en GitHub, Azure DevOps, Git o el sandbox debe llevar una idempotency key estable derivada de `MissionId/runId + stepId + operation`, sin incluir `attempt`; éste se conserva sólo como metadato diagnóstico. Antes de invocar el proveedor, el step crea o reclama atómicamente un `Effect Record` durable con esa clave única y estado `pending`, con un lease para recuperar claims abandonados. Si ya existe un resultado, reutiliza el identificador externo; si el registro está `pending` o `unknown`, reconcilia el efecto antes de reintentarlo. Cuando el proveedor lo permita, usa la misma clave para su idempotencia nativa: la claim de base de datos por sí sola no cierra la ventana de crash entre la llamada externa y el registro del resultado.
 
 La cancelación usa `run.cancel()`. Mastra propaga un `AbortSignal`, pero un step activo debe observarlo; de lo contrario termina ese step y evita los siguientes. La Factory sólo marcará `Cancelled` tras reconciliar el estado real del run.
 
